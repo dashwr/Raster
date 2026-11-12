@@ -63,7 +63,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
     if sess.status == Status::Working && !matches!(sess.items.last(), Some(Item::Tools { .. })) {
         list = list.child(
             row().key("working").gap(8.0)
-                .child(text(spinner(s.spin)).font(LABEL).color(p.text))
+                .child(super::glyph(spinner(s.spin), LABEL, p.text))
                 .child(text("trabalhando…").font(LABEL).color(p.dim)),
         );
     }
@@ -86,7 +86,7 @@ fn tools(s: &State, sid: u64, idx: usize, calls: &[crate::session::ToolCall], op
     let n = calls.len();
     let label = if live { format!("trabalhando… · {n} ferramenta{}", if n == 1 { "" } else { "s" }) } else { format!("usou {n} ferramenta{}", if n == 1 { "" } else { "s" }) };
     let head = row().gap(8.0).center_y().hover(p.panel).px(4.0).py(2.0)
-        .child(text(lead).font(LABEL).color(if live { p.text } else { p.faint }))
+        .child(super::glyph(lead, LABEL, if live { p.text } else { p.faint }))
         .child(text(label).font(LABEL).color(p.dim))
         .child(text(if open { "▾" } else { "▸" }).font(LABEL).color(p.faint))
         .on_press(move |s: &mut State| {
@@ -102,7 +102,7 @@ fn tools(s: &State, sid: u64, idx: usize, calls: &[crate::session::ToolCall], op
             let mc = if call.error { p.danger } else if call.done { p.faint } else { p.text };
             body = body.child(
                 row().key(format!("call-{i}")).gap(8.0).px(8.0)
-                    .child(text(mark).font(SMALL).color(mc))
+                    .child(super::glyph(mark, SMALL, mc))
                     .child(text(call.name.clone()).font(SMALL).color(p.text))
                     .child(text(call.summary.clone()).font(SMALL).color(p.dim).grow(1.0).truncate()),
             );

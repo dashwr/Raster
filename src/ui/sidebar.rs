@@ -68,7 +68,7 @@ pub fn view(s: &State) -> El {
                     .fill(if sel { p.field } else { p.panel }).hover(p.field)
                     .child(text(x.agent.glyph()).font(SMALL).color(x.agent.color()).w(16.0))
                     .child(text(x.title.clone()).font(LABEL).color(if sel { p.text } else { p.dim }).grow(1.0).truncate())
-                    .child(text(mark).font(LABEL).color(mark_color))
+                    .child(super::glyph(mark, LABEL, mark_color))
                     .on_press(move |s: &mut State| s.select(id))
                     .on_secondary_press(move |s: &mut State, at, _tx: &mut Tx| {
                         s.menu = Some(Menu { x: at.x, y: at.y, target: MenuTarget::Session(id) });

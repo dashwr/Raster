@@ -55,7 +55,7 @@ pub fn view(s: &State) -> El {
         grid = grid.child(
             col().key(format!("sub-{}", sub.id)).w(58.0).gap(4.0).items_center()
                 .child(el().size(40.0, 40.0).border(1.0, p.line).pixels_fit(&avatar(&sub.id), rune::SurfaceFit::Fill))
-                .child(row().gap(4.0).child(text(mark).font(LABEL).color(if busy { p.text } else { p.faint })).child(text(word).font(SMALL).color(p.faint)))
+                .child(row().gap(4.0).child(super::glyph(mark, LABEL, if busy { p.text } else { p.faint })).child(text(word).font(SMALL).color(p.faint)))
                 .child(text(sub.label.clone()).font(SMALL).color(p.dim).truncate().w(58.0))
                 .help(tip),
         );
@@ -77,7 +77,7 @@ pub fn view(s: &State) -> El {
             let mut entry = col().key(format!("bg-{key}")).w_full()
                 .child(
                     row().px(12.0).py(4.0).gap(8.0).hover(p.field)
-                        .child(text(mark).font(SMALL).color(if c.error { p.danger } else { p.dim }))
+                        .child(super::glyph(mark, SMALL, if c.error { p.danger } else { p.dim }))
                         .child(text(c.summary.clone()).font(SMALL).color(p.text).grow(1.0).truncate())
                         .on_press(move |s: &mut State| {
                             s.preview = if s.preview.as_deref() == Some(k2.as_str()) { None } else { Some(k2.clone()) };
