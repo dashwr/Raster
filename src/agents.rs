@@ -2,8 +2,6 @@
 
 use std::path::PathBuf;
 
-use rune::Color;
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Agent {
     Chat,
@@ -24,23 +22,14 @@ impl Agent {
         }
     }
 
-    pub fn glyph(self) -> &'static str {
+    /// Nome do ícone pixel em `assets/icons/icons.txt`.
+    pub fn icon(self) -> &'static str {
         match self {
-            Agent::Chat => "~>",
-            Agent::Code => "/>",
-            Agent::Search => "⌕",
-            Agent::Test => "✓",
+            Agent::Chat => "chat",
+            Agent::Code => "code",
+            Agent::Search => "scout",
+            Agent::Test => "test",
         }
-    }
-
-    pub fn color(self) -> Color {
-        let hex = match self {
-            Agent::Chat => "#f2f2f2",
-            Agent::Code => "#7fd1ff",
-            Agent::Search => "#ffd36b",
-            Agent::Test => "#ff7a7a",
-        };
-        rune::color::hex(hex).unwrap()
     }
 
     pub fn default_model(self) -> &'static str {

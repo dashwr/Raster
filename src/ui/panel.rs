@@ -1,38 +1,28 @@
 //! Painel direito: swarm de subagentes (avatares pixelados com status) e comandos em background.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use rune::{El, col, el, row, text};
 
-use rune::{El, Pixels, col, el, row, text};
-
-use super::{LABEL, SMALL, pal, spinner};
+use super::{LABEL, SMALL, icon, icon_sized, pal, spinner};
 use crate::State;
 use crate::session::{Item, SubStatus};
 use crate::swarm::{Member, Phase};
 
-pub const W: f32 = 236.0;
+pub const W: f32 = 196.0;
 
-thread_local! {
-    static AVATARS: RefCell<HashMap<String, Pixels>> = RefCell::new(HashMap::new());
-}
-
-fn avatar(id: &str) -> Pixels {
-    AVATARS.with(|m| {
-        m.borrow_mut().entry(id.to_string()).or_insert_with(|| {
-            let seed = id.bytes().fold(1469598103934665603u64, |h, b| (h ^ b as u64).wrapping_mul(1099511628211));
-            super::dither::avatar(seed, 5)
-        }).clone()
-    })
+/// Gato fixo por subagente (8 variações), escolhido pelo id.
+fn cat(id: &str) -> String {
+    let h = id.bytes().fold(1469598103934665603u64, |h, b| (h ^ b as u64).wrapping_mul(1099511628211));
+    format!("cat_{}", h % 8 + 1)
 }
 
 pub fn view(s: &State) -> El {
     let p = pal();
     let Some(sess) = s.session() else {
-        return col().key("panel").w(W).h_full().fill(p.panel).border_sides([0.0, 0.0, 0.0, 1.0], p.line)
-            .child(section("swarm")).child(empty("nenhuma sessão aberta"));
+        return super::float(col().key("panel").w(W).pb(12.0))
+            .child(section("swarm")).child(empty("No session open"));
     };
 
-    let mut grid = row().key("swarm-grid").w_full().px(12.0).gap(10.0).flex_wrap();
+    let mut grid = row().key("swarm-grid").w_full().px(12.0).gap(8.0).flex_wrap();
     let watched = s.swarm.lock().ok().and_then(|m| m.get(&sess.id).cloned()).unwrap_or_default();
     let live: Vec<Member> = if watched.is_empty() {
         sess.subs.iter().map(|x| Member {
@@ -43,20 +33,18 @@ pub fn view(s: &State) -> El {
         watched
     };
     for sub in &live {
-        let (mark, word) = match sub.phase {
-            Phase::Thinking => (spinner(s.spin), "pensando"),
-            Phase::Writing => (spinner(s.spin), "escrevendo"),
-            Phase::Tool => ("⚒", "ferramenta"),
-            Phase::Idle => ("·", "ocioso"),
-            Phase::Dead => ("✗", "morto"),
+        let state: El = match sub.phase {
+            Phase::Thinking => super::glyph(spinner(s.spin), LABEL, p.text),
+            Phase::Writing => icon("writing", p.text),
+            Phase::Tool => icon("tool", p.text),
+            Phase::Idle => icon("idle", p.dim),
+            Phase::Dead => icon("dead", p.dim),
         };
-        let busy = matches!(sub.phase, Phase::Thinking | Phase::Writing | Phase::Tool);
-        let tip = format!("{} · {} · {}", sub.label, if sub.agent.is_empty() { "subagente" } else { &sub.agent }, crate::ui::friendly_model(&sub.model));
+        let tip = format!("{} · {} · {}", sub.label, if sub.agent.is_empty() { "subagent" } else { &sub.agent }, crate::ui::friendly_model(&sub.model));
         grid = grid.child(
-            col().key(format!("sub-{}", sub.id)).w(58.0).gap(4.0).items_center()
-                .child(el().size(40.0, 40.0).border(1.0, p.line).pixels_fit(&avatar(&sub.id), rune::SurfaceFit::Fill))
-                .child(row().gap(4.0).child(super::glyph(mark, LABEL, if busy { p.text } else { p.faint })).child(text(word).font(SMALL).color(p.faint)))
-                .child(text(sub.label.clone()).font(SMALL).color(p.dim).truncate().w(58.0))
+            col().key(format!("sub-{}", sub.id)).w(36.0).gap(4.0).items_center()
+                .child(el().size(36.0, 36.0).center().border(1.0, p.text).child(icon_sized(&cat(&sub.id), 32.0, p.text)))
+                .child(el().size(16.0, 16.0).center().child(state))
                 .help(tip),
         );
     }
@@ -72,22 +60,22 @@ pub fn view(s: &State) -> El {
             n += 1;
             let key = format!("{idx}-{ci}");
             let open = s.preview.as_deref() == Some(key.as_str());
-            let mark = if !c.done { spinner(s.spin + ci) } else if c.error { "✗" } else { "✓" };
+            let mark: El = if !c.done { super::glyph(spinner(s.spin + ci), SMALL, p.text) } else if c.error { icon("error", p.text) } else { icon("check", p.dim) };
             let k2 = key.clone();
             let mut entry = col().key(format!("bg-{key}")).w_full()
                 .child(
                     row().px(12.0).py(4.0).gap(8.0).hover(p.field)
-                        .child(super::glyph(mark, SMALL, if c.error { p.danger } else { p.dim }))
+                        .child(mark)
                         .child(text(c.summary.clone()).font(SMALL).color(p.text).grow(1.0).truncate())
                         .on_press(move |s: &mut State| {
                             s.preview = if s.preview.as_deref() == Some(k2.as_str()) { None } else { Some(k2.clone()) };
                         }),
                 );
             if open {
-                let out = if c.output.is_empty() { "(sem saída ainda)".to_string() } else { c.output.clone() };
+                let out = if c.output.is_empty() { "(no output yet)".to_string() } else { c.output.clone() };
                 let tail: String = out.lines().rev().take(18).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
                 entry = entry.child(
-                    el().mx(10.0).mb(6.0).px(8.0).py(6.0).fill(p.bg).border(1.0, p.line)
+                    el().mx(10.0).mb(6.0).px(8.0).py(6.0).fill(p.bg).border(1.0, p.dim)
                         .child(text(format!("> {}\n\n{tail}", c.summary)).font(SMALL).color(p.dim).wrap_anywhere().selectable(true)),
                 );
             }
@@ -95,19 +83,18 @@ pub fn view(s: &State) -> El {
         }
     }
 
-    let mut c = col().key("panel").w(W).h_full().fill(p.panel).border_sides([0.0, 0.0, 0.0, 1.0], p.line)
-        .child(section("swarm"));
-    c = if live.is_empty() { c.child(empty("sem subagentes")) } else { c.child(grid) };
+    let mut c = super::float(col().key("panel").w(W).pb(12.0)).child(section("swarm"));
+    c = if live.is_empty() { c.child(empty("No subagents")) } else { c.child(grid) };
     c = c.child(section("background"));
-    c = if n == 0 { c.child(empty("nenhum comando")) } else { c.child(bg) };
-    col().key("panel-scroll").h_full().child(c.scroll(rune::ScrollSpec { stick_bottom: false }))
+    c = if n == 0 { c.child(empty("No commands")) } else { c.child(bg) };
+    col().key("panel-col").child(c)
 }
 
 fn section(title: &'static str) -> El {
     let p = pal();
-    row().w_full().px(12.0).pt(14.0).pb(8.0).gap(8.0)
-        .child(text("▚").font(SMALL).color(p.dim))
-        .child(text(title).font(SMALL).color(p.dim))
+    col().w_full().px(12.0).pt(12.0).pb(8.0).gap(6.0)
+        .child(text(title.to_uppercase()).font(SMALL).color(p.dim))
+        .child(super::sep(W - 26.0))
 }
 
 fn empty(msg: &'static str) -> El {

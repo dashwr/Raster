@@ -6,7 +6,7 @@ license = "MIT"
 description = "Solwired Raster: desktop app for the omp-dsh agent runtime"
 
 [dependencies]
-rune = { git = "https://github.com/anomalyco/rune", rev = "7bd9aaf156a872da8fb39f1525e3ae4abf53355a" }
+rune = { git = "https://github.com/anomalyco/rune", rev = "7bd9aaf156a872da8fb39f1525e3ae4abf53355a", features = ["native-file-dialog"] }
 rune-kit = { git = "https://github.com/anomalyco/rune", rev = "7bd9aaf156a872da8fb39f1525e3ae4abf53355a", features = ["markdown", "mermaid"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

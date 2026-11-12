@@ -82,6 +82,7 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
     std::fs::create_dir_all(&s.session_dir)?;
     let prompts: Vec<String> = s.prompt_files.iter().map(|p| p.display().to_string()).collect();
 
+    let prefs = crate::store::Prefs::load();
     let mut cmd = Command::new(&omp);
     cmd.args(["--mode", "rpc", "--no-title", "--model", s.model, "--thinking", s.thinking, "--auto-approve"])
         .args(["--no-tools", "--no-context-files", "--no-skills", "--no-rules"])
@@ -96,7 +97,9 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
         .env("OMPDSH_AGENT_ID", format!("session-{}", s.sid))
         .env("RASTER_OMP", &omp)
         .env("RASTER_KEEPALIVE", "1")
-        .env("RASTER_VAULT_NUDGE", "1")
+        .env("RASTER_VAULT_NUDGE", if prefs.vault_nudge { "1" } else { "0" })
+        .env("RASTER_DCP_MIN", prefs.dcp_soft.to_string())
+        .env("RASTER_DCP_MAX", prefs.dcp_hard.to_string())
         .env("RASTER_PROMPT_FILES", prompts.join(":"))
         .env("RASTER_AGENTS_DIR", crate::agents::agents_dir())
         .env("RASTER_CENTER", st.join("Center.md"))

@@ -24,7 +24,7 @@ pub const MODELS: &[(&str, &str)] = &[
     ("openai-codex/gpt-6-luna", "GPT-6 Luna"),
 ];
 
-pub const EFFORTS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh"];
+pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MenuTarget {
@@ -52,8 +52,9 @@ pub const UTIL_ID: u64 = u64::MAX;
 pub enum Popover {
     None,
     Model,
-    Effort,
     Agent,
+    Plus,
+    Context,
 }
 
 pub struct State {
@@ -73,7 +74,6 @@ pub struct State {
     pub menu: Option<Menu>,
     pub popover: Popover,
     pub bg: Pixels,
-    pub ripple: Option<(f32, f32, f64)>,
     pub clock: f64,
     pub logged_in: bool,
     pub preview: Option<String>,
@@ -81,6 +81,12 @@ pub struct State {
     pub view: View,
     pub util: Option<Session>,
     pub time: std::sync::Arc<std::sync::Mutex<(u32, String)>>,
+    pub renaming: Option<u64>,
+    pub rename: TextEdit,
+    /// Início da decodificação da tela (troca, abertura ou nova conversa).
+    pub decode_t0: f64,
+    pub attachments: Vec<PathBuf>,
+    pub prefs: store::Prefs,
 }
 
 impl State {
@@ -103,7 +109,6 @@ impl State {
             menu: None,
             popover: Popover::None,
             bg: Pixels::new(),
-            ripple: None,
             clock: 0.0,
             logged_in: auth::claude_logged_in(),
             preview: None,
@@ -111,6 +116,11 @@ impl State {
             view: View::Chat,
             util: None,
             time: Default::default(),
+            renaming: None,
+            rename: TextEdit::new(""),
+            decode_t0: 0.0,
+            attachments: Vec::new(),
+            prefs: store::Prefs::load(),
         };
         store::load(&mut s);
         s.composer.focused = true;
@@ -151,6 +161,9 @@ impl State {
 
     /// Seleciona uma sessão; se já tinha histórico e está encerrada, reabre para redesenhar.
     pub fn select(&mut self, id: u64) {
+        if self.current != Some(id) {
+            self.decode_t0 = self.clock;
+        }
         self.current = Some(id);
         self.view = View::Chat;
         self.menu = None;
@@ -162,7 +175,35 @@ impl State {
         }
     }
 
+    pub fn start_rename(&mut self, id: u64) {
+        let t = self.by_id(id).map(|x| x.title.clone()).unwrap_or_default();
+        self.rename = TextEdit::new(&t);
+        self.rename.focused = true;
+        self.renaming = Some(id);
+    }
+
+    pub fn commit_rename(&mut self) {
+        let t = self.rename.text.trim().to_string();
+        if let Some(id) = self.renaming.take()
+            && !t.is_empty()
+            && let Some(x) = self.by_id(id)
+        {
+            x.title = t;
+            store::save(self);
+        }
+    }
+
+    /// Modelos de provedores com conexão ativa: Claude pelo login local, o resto pelo omp.
+    pub fn models(&self) -> Vec<(&'static str, &'static str)> {
+        let providers = self.util.as_ref().map(|u| u.providers.clone()).unwrap_or_default();
+        MODELS.iter().copied().filter(|(id, _)| {
+            let prov = id.split('/').next().unwrap_or("");
+            (prov == "anthropic" && self.logged_in) || providers.iter().any(|p| p.0 == prov && p.2)
+        }).collect()
+    }
+
     pub fn new_session(&mut self) {
+        self.decode_t0 = self.clock;
         self.current = None;
         self.view = View::Chat;
         self.composer.clear();
@@ -171,15 +212,20 @@ impl State {
 
     /// Envia o texto do composer: cria a sessão se for a tela inicial; reabre se estiver encerrada.
     pub fn submit(&mut self) {
-        let text = self.composer.text.trim().to_string();
+        let mut text = self.composer.text.trim().to_string();
         if text.is_empty() {
             return;
+        }
+        for a in self.attachments.drain(..) {
+            text.push_str(&format!("\n@{}", a.display()));
         }
         self.composer.clear();
         if self.current.is_none() {
             let id = self.next_id;
             self.next_id += 1;
-            self.sessions.push(Session::new(id, self.new_agent, self.cwd.clone()));
+            let mut x = Session::new(id, self.new_agent, self.cwd.clone());
+            (x.model, x.thinking) = self.prefs.agent_defaults(self.new_agent);
+            self.sessions.push(x);
             self.current = Some(id);
         }
         let (inbox, waker) = (self.inbox.clone(), self.waker.clone().expect("waker"));
@@ -215,12 +261,9 @@ fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
         }
         tx.wake_after(std::time::Duration::from_millis(80));
     }
-    if let Some((_, _, t0)) = s.ripple {
-        if clock - t0 > 0.6 {
-            s.ripple = None;
-        }
+    if clock - s.decode_t0 < ui::decode::SPAN + 0.1 || s.sessions.iter().any(|x| x.status == Status::Working) {
         changed = true;
-        tx.wake_after(std::time::Duration::from_millis(16));
+        tx.wake_after(std::time::Duration::from_millis(33));
     }
     changed
 }
@@ -247,31 +290,25 @@ fn on_key(s: &mut State, k: &rune::KeyEvent, _tx: &mut Tx) -> bool {
 }
 
 fn view(s: &State, cx: &mut Cx<State>) -> El {
-    let p = ui::pal();
     let main = match (s.view, s.session()) {
-        (View::Configs, _) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg).child(ui::config::view(s)),
-        (View::Chat, Some(sess)) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg)
+        (View::Configs, _) => col().key("main").grow(1.0).h_full().min_w(0.0).child(ui::config::view(s)),
+        (View::Chat, Some(sess)) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(16.0)
             .child(ui::transcript::view(s, sess, cx)).child(ui::composer::view(s)),
-        (View::Chat, None) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg)
+        (View::Chat, None) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(16.0)
             .child(ui::transcript::welcome(s)).child(ui::composer::view(s)),
     };
-    let mut root = row().key("root").w_full().h_full().fill(p.frame)
+    let body = row().key("body").absolute(0.0, 0.0).w_full().h_full().px(18.0).pt(18.0).pb(24.0).gap(22.0)
         .child(ui::sidebar::view(s))
         .child(main)
         .child(ui::panel::view(s));
-    if let Some(m) = s.menu {
-        root = root.child(ui::sidebar::context_menu(m));
-    }
+    let mut root = el().key("root").w_full().h_full().fill(ui::pal().bg)
+        .child(el().key("field").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.bg, rune::SurfaceFit::Fill).opacity(0.5))
+        .child(body);
     if s.popover != Popover::None {
         root = root.child(ui::composer::popover(s));
     }
-    if let Some((x, y, t0)) = s.ripple {
-        let k = ((s.clock - t0) / 0.6).clamp(0.0, 1.0) as f32;
-        let r = 8.0 + 60.0 * k;
-        root = root.child(
-            el().key("ripple").absolute(x - r, y - r).size(r * 2.0, r * 2.0).radius(r)
-                .border(1.0, p.text.alpha(0.5 * (1.0 - k))),
-        );
+    if let Some(m) = s.menu {
+        root = root.child(ui::sidebar::context_menu(m));
     }
     root
 }
@@ -280,7 +317,8 @@ fn setup(s: &mut State, waker: rune::Waker) {
     ui::transcript::tick_clock(s.time.clone(), waker.clone());
     swarm::watch(s.swarm.clone(), waker.clone());
     s.waker = Some(waker);
-    ui::dither::animate(s.bg.clone(), 960, 600);
+    ui::dither::animate(s.bg.clone(), 640, 400);
+    s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
 
 /// Pasta do projeto: o último argumento que é um diretório existente, senão a pasta atual.
@@ -354,7 +392,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("demo", store::demo)],
+        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings)],
         min_size: Some((820.0, 520.0)),
         ..AppSpec::new("Raster", (1280.0, 800.0), State::new, view)
     });

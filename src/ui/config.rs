@@ -1,67 +1,153 @@
-//! Configs: provedores (login do Claude reaproveitado, login do Codex pelo OAuth do omp) e caminhos.
+//! Settings: contas, agentes, memória, contexto, ferramentas, aparência e caminhos.
 
 use rune::{El, col, el, row, text};
 use serde_json::json;
 
-use super::{BODY, LABEL, SMALL, STRONG, button, pal};
+use super::{LABEL, SMALL, STRONG, button, frame, icon, pal};
+use crate::agents::ALL;
 use crate::session::Item;
-use crate::{State, View};
+use crate::store::Prefs;
+use crate::{EFFORTS, State, View};
+
+fn line(label: &str, hint: &str, control: El) -> El {
+    let p = pal();
+    row().w_full().py(4.0).gap(12.0).center_y()
+        .child(col().grow(1.0).min_w(0.0)
+            .child(text(label.to_string()).font(LABEL).color(p.text))
+            .child(text(hint.to_string()).font(SMALL).color(p.faint).wrap()))
+        .child(control)
+}
+
+fn set(s: &mut State, f: impl FnOnce(&mut Prefs)) {
+    f(&mut s.prefs);
+    s.prefs.save();
+}
+
+/// Switch on · off no mesmo desenho do active · all.
+fn switch(key: &'static str, on: bool, f: fn(&mut Prefs)) -> El {
+    let p = pal();
+    let cell = |t: &'static str, lit: bool| el().size(34.0, 20.0).center().fill(if lit { p.text } else { p.bg })
+        .child(text(t).font(SMALL).color(if lit { p.bg } else { p.dim }));
+    row().key(key).border(1.0, p.dim).child(cell("OFF", !on)).child(cell("ON", on))
+        .on_press(move |s: &mut State| set(s, f))
+}
+
+fn stepper(key: &'static str, value: String, dec: fn(&mut Prefs), inc: fn(&mut Prefs)) -> El {
+    let p = pal();
+    let b = |k: String, ic: &'static str, f: fn(&mut Prefs)| el().key(k).size(22.0, 22.0).center().hover(p.field)
+        .child(if ic == "minus" { el().size(10.0, 2.0).fill(p.text) } else { icon(ic, p.text) }).on_press(move |s: &mut State| set(s, f));
+    row().key(key).border(1.0, p.dim).center_y()
+        .child(b(format!("{key}-"), "minus", dec))
+        .child(el().w(64.0).center().child(text(value).font(SMALL).color(p.text)))
+        .child(b(format!("{key}+"), "plus", inc))
+}
+
+fn k(n: u32) -> String {
+    format!("{}k", n / 1000)
+}
 
 pub fn view(s: &State) -> El {
     let p = pal();
-    let mut c = col().key("config").w_full().max_w(720.0).px(28.0).py(20.0).gap(14.0)
+    let pr = &s.prefs;
+    let mut c = col().key("config").w_full().max_w(760.0).px(22.0).py(18.0).gap(18.0)
         .child(row().gap(10.0).center_y()
-            .child(text("configs").font(STRONG).color(p.text))
+            .child(icon("settings", p.text))
+            .child(text("Settings").font(STRONG).color(p.text))
             .child(el().grow(1.0))
-            .child(button("cfg-close", "voltar").on_press(|s: &mut State| s.view = View::Chat)));
+            .child(button("cfg-close", "Back").on_press(|s: &mut State| s.view = View::Chat)));
 
-    // claude: login do Claude Code da máquina
-    let claude = if s.logged_in { "usando o login do Claude Code desta máquina" } else { "sem login: rode `claude` e entre na sua conta" };
-    c = c.child(card("Claude (assinatura)", claude, s.logged_in).child(
-        row().child(button("cfg-claude", "reler login").on_press(|s: &mut State| s.logged_in = crate::auth::claude_logged_in())),
-    ));
-
-    // demais provedores pela sessão utilitária
+    // contas
     let util = s.util.as_ref();
     let providers = util.map(|u| u.providers.clone()).unwrap_or_default();
-    let codex = providers.iter().find(|p| p.0 == "openai-codex").map(|p| p.2).unwrap_or(false);
-    c = c.child(card("ChatGPT / Codex (assinatura)", if codex { "logado" } else { "abre o login OAuth do ChatGPT no navegador" }, codex).child(
-        row().gap(8.0)
-            .child(button("cfg-codex", if codex { "entrar de novo" } else { "entrar" }).on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openai-codex"}))))
-            .child(button("cfg-refresh", "atualizar status").on_press(|s: &mut State| s.util_send(json!({"type": "get_login_providers"})))),
-    ));
-    let others: Vec<_> = providers.iter().filter(|p| p.2 && p.0 != "anthropic" && p.0 != "openai-codex").map(|p| p.1.clone()).collect();
-    if !others.is_empty() {
-        c = c.child(text(format!("outros provedores autenticados no omp: {}", others.join(", "))).font(SMALL).color(p.faint).wrap());
-    }
-
-    // mensagens do fluxo de login (URL aberta, pedidos de código)
+    let on = |id: &str| providers.iter().any(|p| p.0 == id && p.2);
+    let status = |ok: bool| row().gap(6.0).center_y().child(icon(if ok { "check" } else { "lock" }, if ok { p.text } else { p.dim }))
+        .child(text(if ok { "Connected" } else { "Not connected" }).font(SMALL).color(if ok { p.text } else { p.dim }));
+    let mut acc = col().gap(6.0)
+        .child(line("Claude", "Reuses this machine's Claude Code login", row().gap(8.0).center_y().child(status(s.logged_in))
+            .child(button("cfg-claude", "Reload").on_press(|s: &mut State| s.logged_in = crate::auth::claude_logged_in()))))
+        .child(line("ChatGPT / Codex", "OAuth sign in through omp, opens the browser", row().gap(8.0).center_y().child(status(on("openai-codex")))
+            .child(button("cfg-codex", if on("openai-codex") { "Sign in again" } else { "Sign in" })
+                .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openai-codex"}))))))
+        .child(line("OpenRouter", "Sign in through omp", row().gap(8.0).center_y().child(status(on("openrouter")))
+            .child(button("cfg-or", "Sign in").on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openrouter"}))))))
+        .child(row().child(button("cfg-refresh", "Refresh status").on_press(|s: &mut State| s.util_send(json!({"type": "get_login_providers"})))));
     if let Some(u) = util {
         for (idx, it) in u.items.iter().enumerate() {
             let node = match it {
-                Item::Notice(t) => text(format!("— {t}")).font(SMALL).color(p.dim).wrap().selectable(true),
-                Item::Error(t) => text(format!("erro: {t}")).font(SMALL).color(p.danger).wrap(),
+                Item::Notice(t) => text(t.clone()).font(SMALL).color(p.dim).wrap().selectable(true),
+                Item::Error(t) => text(format!("Error: {t}")).font(SMALL).color(p.text).wrap(),
                 Item::Ask { .. } => super::transcript::ask_block(s, u.id, idx, it),
                 _ => continue,
             };
-            c = c.child(node.key(format!("cfg-it-{idx}")));
+            acc = acc.child(node.key(format!("cfg-it-{idx}")));
         }
     }
+    c = c.child(frame("f-acc", "accounts", acc));
+
+    // agentes
+    let mut ag = col().gap(2.0).child(row().gap(10.0).py(2.0)
+        .child(text("AGENT").font(SMALL).color(p.faint).w(110.0))
+        .child(text("MODEL").font(SMALL).color(p.faint).w(150.0))
+        .child(text("EFFORT").font(SMALL).color(p.faint).w(80.0))
+        .child(text("PROMPT").font(SMALL).color(p.faint)));
+    for a in ALL {
+        let (model, effort) = pr.agent_defaults(a);
+        let name = a.name();
+        ag = ag.child(row().key(format!("ag-{name}")).gap(10.0).h(30.0).center_y()
+            .child(row().w(110.0).gap(8.0).center_y().child(super::sidebar::agent_square(a.icon(), 22.0, false)).child(text(name).font(LABEL).color(p.text)))
+            .child(el().w(150.0).child(button(format!("ag-m-{name}"), super::friendly_model(&model)).on_press(move |s: &mut State| {
+                let models = s.models();
+                if models.is_empty() { return; }
+                let (cur, _) = s.prefs.agent_defaults(a);
+                let i = models.iter().position(|m| m.0 == cur).map(|i| (i + 1) % models.len()).unwrap_or(0);
+                let next = models[i].0.to_string();
+                set(s, |p| p.agents.entry(name.into()).or_default().0 = next);
+            })))
+            .child(el().w(80.0).child(button(format!("ag-e-{name}"), effort.clone()).on_press(move |s: &mut State| {
+                let (_, cur) = s.prefs.agent_defaults(a);
+                let i = EFFORTS.iter().position(|e| *e == cur).map(|i| (i + 1) % EFFORTS.len()).unwrap_or(1);
+                set(s, |p| p.agents.entry(name.into()).or_default().1 = EFFORTS[i].into());
+            })))
+            .child(button(format!("ag-p-{name}"), "Edit").on_press(move |_: &mut State| {
+                let _ = std::process::Command::new("xdg-open").arg(a.prompt_file()).spawn();
+            })));
+    }
+    ag = ag.child(super::sep(680.0))
+        .child(line("Subagents can spawn subagents", "Lets a subagent call other agents", switch("sw-sub", pr.sub_invoke, |p| p.sub_invoke = !p.sub_invoke)))
+        .child(line("Max parallel subagents", "Per session", stepper("st-par", pr.max_parallel.to_string(),
+            |p| p.max_parallel = p.max_parallel.saturating_sub(1).max(1), |p| p.max_parallel = (p.max_parallel + 1).min(16))));
+    c = c.child(frame("f-ag", "agents", ag));
+
+    c = c.child(frame("f-mem", "memory", col().gap(2.0)
+        .child(line("Vault", "basic-memory MCP over ~/vault", switch("sw-vault", pr.vault, |p| p.vault = !p.vault)))
+        .child(line("Save reminder", "Nudges the agent to write decisions and findings", switch("sw-nudge", pr.vault_nudge, |p| p.vault_nudge = !p.vault_nudge)))
+        .child(line("Vault before web", "Search notes before searching the web", switch("sw-first", pr.vault_first, |p| p.vault_first = !p.vault_first)))));
+
+    c = c.child(frame("f-ctx", "context", col().gap(2.0)
+        .child(line("Soft limit", "DCP starts pruning above this", stepper("st-soft", k(pr.dcp_soft),
+            |p| p.dcp_soft = p.dcp_soft.saturating_sub(10_000).max(10_000), |p| p.dcp_soft = (p.dcp_soft + 10_000).min(p.dcp_hard))))
+        .child(line("Hard limit", "DCP compresses above this", stepper("st-hard", k(pr.dcp_hard),
+            |p| p.dcp_hard = p.dcp_hard.saturating_sub(10_000).max(p.dcp_soft), |p| p.dcp_hard = (p.dcp_hard + 10_000).min(400_000))))
+        .child(line("Nudge every", "Requests between DCP nudges", stepper("st-every", format!("{} req", pr.dcp_every),
+            |p| p.dcp_every = p.dcp_every.saturating_sub(1).max(1), |p| p.dcp_every = (p.dcp_every + 1).min(50))))
+        .child(line("Deduplicate", "Drop repeated tool outputs", switch("sw-dedup", pr.dcp_dedup, |p| p.dcp_dedup = !p.dcp_dedup)))));
+
+    c = c.child(frame("f-tools", "tools", col().gap(2.0)
+        .child(line("rtk", "Condense every command's output", switch("sw-rtk", pr.rtk, |p| p.rtk = !p.rtk)))
+        .child(line("Ask before destructive commands", "rm, reset, force push and the like", switch("sw-destr", pr.ask_destructive, |p| p.ask_destructive = !p.ask_destructive)))
+        .child(line("Question timeout", "Unanswered questions resolve after this", stepper("st-to", format!("{} s", pr.ask_timeout),
+            |p| p.ask_timeout = p.ask_timeout.saturating_sub(30).max(30), |p| p.ask_timeout = (p.ask_timeout + 30).min(1800))))));
+
+    c = c.child(frame("f-look", "appearance", col().gap(2.0)
+        .child(line("Dither field", "Animated background", switch("sw-dither", pr.dither, |p| p.dither = !p.dither)))
+        .child(line("Ripples", "Click feedback", switch("sw-rip", pr.ripples, |p| p.ripples = !p.ripples)))
+        .child(line("Field fps", "Background frame rate", stepper("st-fps", pr.fps.to_string(), |p| p.fps = p.fps.saturating_sub(2).max(2), |p| p.fps = (p.fps + 2).min(30))))
+        .child(line("Font size", "Body text", stepper("st-font", format!("{} px", pr.font), |p| p.font = p.font.saturating_sub(1).max(10), |p| p.font = (p.font + 1).min(18))))));
 
     let st = crate::omp::state_dir();
-    c = c.child(col().gap(4.0).pt(10.0)
-        .child(text("caminhos").font(LABEL).color(p.dim))
-        .child(text(format!("estado: {}", st.display())).font(SMALL).color(p.faint))
-        .child(text(format!("runtime: {}", crate::omp::runtime_dir().display())).font(SMALL).color(p.faint))
-        .child(text(format!("agentes: {}", crate::agents::agents_dir().display())).font(SMALL).color(p.faint)));
-    col().key("config-scroll").grow(1.0).min_h(0.0).w_full().child(c).scroll(rune::ScrollSpec { stick_bottom: false })
-}
-
-fn card(title: &str, status: &str, ok: bool) -> El {
-    let p = pal();
-    col().w_full().px(14.0).py(12.0).gap(8.0).fill(p.panel).border(1.0, if ok { p.dim } else { p.line })
-        .child(row().gap(8.0)
-            .child(text(if ok { "●" } else { "○" }).font(LABEL).color(p.text))
-            .child(text(title.to_string()).font(BODY).color(p.text)))
-        .child(text(status.to_string()).font(SMALL).color(p.dim).wrap())
+    c = c.child(frame("f-paths", "paths", col().gap(4.0)
+        .child(text(format!("state    {}", st.display())).font(SMALL).color(p.dim))
+        .child(text(format!("runtime  {}", crate::omp::runtime_dir().display())).font(SMALL).color(p.dim))
+        .child(text(format!("agents   {}", crate::agents::agents_dir().display())).font(SMALL).color(p.dim))));
+    super::float(col().key("config-scroll").grow(1.0).min_h(0.0).w_full()).child(c).scroll(rune::ScrollSpec { stick_bottom: false })
 }

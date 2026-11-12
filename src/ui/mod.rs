@@ -1,7 +1,8 @@
-//! Tema pixelized (preto e branco, raio zero, mono) e peças comuns da UI.
+//! Tema float (preto e branco, raio zero, mono, sombras duras) e peças comuns da UI.
 
 pub mod composer;
 pub mod config;
+pub mod decode;
 pub mod dither;
 pub mod panel;
 pub mod sidebar;
@@ -14,7 +15,6 @@ pub const PIXEL: Family = Family::Named("Pixelify Sans");
 
 pub struct Pal {
     pub bg: Color,
-    pub frame: Color,
     pub panel: Color,
     pub field: Color,
     pub button: Color,
@@ -22,7 +22,6 @@ pub struct Pal {
     pub text: Color,
     pub dim: Color,
     pub faint: Color,
-    pub danger: Color,
 }
 
 pub fn pal() -> &'static Pal {
@@ -30,16 +29,14 @@ pub fn pal() -> &'static Pal {
     P.get_or_init(|| {
         let h = |s: &str| rune::color::hex(s).unwrap();
         Pal {
-            bg: h("#0a0a0a"),
-            frame: h("#0a0a0a"),
-            panel: h("#111111"),
-            field: h("#181818"),
-            button: h("#222222"),
-            line: h("#2a2a2a"),
-            text: h("#f2f2f2"),
-            dim: h("#8c8c8c"),
+            bg: h("#000000"),
+            panel: h("#000000"),
+            field: h("#161616"),
+            button: h("#242424"),
+            line: h("#8a8a8a"),
+            text: h("#ececec"),
+            dim: h("#8a8a8a"),
             faint: h("#5a5a5a"),
-            danger: h("#ff6b6b"),
         }
     })
 }
@@ -113,7 +110,7 @@ fn braille_px(bits: u32, color: Color) -> Pixels {
 /// Botão quadrado, sem raio, com hover em cinza.
 pub fn button(key: impl Into<String>, label: impl Into<String>) -> El {
     let p = pal();
-    el().key(key.into()).px(10.0).py(5.0).fill(p.button).hover(p.line).border(1.0, p.line)
+    el().key(key.into()).px(10.0).py(5.0).fill(p.bg).hover(p.field).border(1.0, p.text)
         .child(text(label.into()).font(LABEL).color(p.text))
 }
 
@@ -124,4 +121,109 @@ pub fn friendly_model(id: &str) -> String {
         }
     }
     id.rsplit('/').next().unwrap_or(id).to_string()
+}
+
+fn rgba8(c: Color) -> [u8; 4] {
+    [c.r, c.g, c.b, c.a].map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+fn px_from(w: u32, h: u32, on: impl Fn(u32, u32) -> bool, c: [u8; 4]) -> Pixels {
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            if on(x, y) {
+                let o = ((y * w + x) * 4) as usize;
+                rgba[o..o + 4].copy_from_slice(&c);
+            }
+        }
+    }
+    let p = Pixels::new();
+    p.set(w, h, rgba);
+    p
+}
+
+fn icon_rows(name: &str) -> Option<&'static [&'static str]> {
+    static SET: std::sync::OnceLock<std::collections::HashMap<&'static str, Vec<&'static str>>> = std::sync::OnceLock::new();
+    let set = SET.get_or_init(|| {
+        let mut m = std::collections::HashMap::new();
+        let mut lines = include_str!("../../assets/icons/icons.txt").lines();
+        while let Some(head) = lines.next() {
+            let Some(n) = head.split_whitespace().next() else { continue };
+            m.insert(n, lines.by_ref().take(16).collect());
+        }
+        m
+    });
+    set.get(name).map(|v| v.as_slice())
+}
+
+thread_local! {
+    static PX: std::cell::RefCell<std::collections::HashMap<(String, [u8; 4]), Pixels>> = Default::default();
+}
+
+fn cached(key: String, c: Color, make: impl FnOnce([u8; 4]) -> Pixels) -> Pixels {
+    let c = rgba8(c);
+    PX.with(|m| m.borrow_mut().entry((key, c)).or_insert_with(|| make(c)).clone())
+}
+
+/// Ícone pixel 16x16 de `assets/icons/icons.txt`, desenhado em `size` pontos.
+pub fn icon_sized(name: &str, size: f32, color: Color) -> El {
+    let px = cached(format!("i:{name}"), color, |c| {
+        let rows = icon_rows(name).unwrap_or(&[]);
+        px_from(16, 16, |x, y| rows.get(y as usize).and_then(|r| r.as_bytes().get(x as usize)) == Some(&b'#'), c)
+    });
+    el().size(size, size).pixels_fit(&px, rune::SurfaceFit::Fill)
+}
+
+pub fn icon(name: &str, color: Color) -> El {
+    icon_sized(name, 16.0, color)
+}
+
+/// Padrões de preenchimento: sólido, xadrez, listras, pontos, grade esparsa e pontilhado de linha.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Dither {
+    Solid,
+    Checker,
+    Stripes,
+    Sparse,
+}
+
+pub fn dither_px(kind: Dither, w: u32, h: u32, color: Color) -> Pixels {
+    cached(format!("d:{kind:?}:{w}x{h}"), color, |c| {
+        px_from(w, h, |x, y| match kind {
+            Dither::Solid => true,
+            Dither::Checker => (x + y) % 2 == 0,
+            Dither::Stripes => x % 3 == 0,
+            Dither::Sparse => x % 4 == 0 && y % 2 == 0 && (x / 4 + y / 2) % 2 == 0,
+        }, c)
+    })
+}
+
+/// Bloco de `w`x`h` pontos com um padrão de dither.
+pub fn dither(kind: Dither, w: f32, h: f32, color: Color) -> El {
+    el().size(w, h).pixels_fit(&dither_px(kind, w.max(1.0) as u32, h.max(1.0) as u32, color), rune::SurfaceFit::Fill)
+}
+
+/// Separador pontilhado horizontal.
+pub fn sep(w: f32) -> El {
+    let px = cached(format!("sep:{w}"), pal().dim, |c| px_from(w as u32, 1, |x, _| x % 2 == 0, c));
+    el().size(w, 1.0).pixels_fit(&px, rune::SurfaceFit::Fill)
+}
+
+/// Sombra dura deslocada, sem blur.
+pub fn hard(e: El, d: f32, color: Color) -> El {
+    e.box_shadow(rune::Shadow { x: d, y: d, blur: 0.0, spread: 0.0, color, inset: false })
+}
+
+/// Painel solto do float: fundo preto, borda clara e sombra branca dura.
+pub fn float(e: El) -> El {
+    let p = pal();
+    hard(e.fill(p.bg).border(1.0, p.text), 6.0, p.text)
+}
+
+/// Caixa com título na borda (estilo box).
+pub fn frame(key: impl Into<String>, title: &str, body: El) -> El {
+    let p = pal();
+    el().key(key.into()).w_full().pt(6.0)
+        .child(body.w_full().border(1.0, p.dim).px(10.0).pt(14.0).pb(10.0))
+        .child(el().absolute(10.0, 0.0).px(5.0).fill(p.bg).child(text(title.to_uppercase()).font(SMALL).color(p.dim)))
 }

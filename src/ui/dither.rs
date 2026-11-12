@@ -1,5 +1,5 @@
 //! Campo pontilhado preto e branco (Bayer 8×8 sobre manchas de luz que derivam devagar), gerado numa
-//! thread e entregue por `Pixels::set`; e avatares pixelados determinísticos para o swarm.
+//! thread e entregue por `Pixels::set`.
 
 use rune::Pixels;
 
@@ -59,35 +59,6 @@ pub fn animate(px: Pixels, w: u32, h: u32) {
             std::thread::sleep(std::time::Duration::from_millis(125));
         }
     });
-}
-
-/// Avatar 8×8 espelhado a partir de uma semente, ampliado `scale` vezes.
-pub fn avatar(seed: u64, scale: u32) -> Pixels {
-    let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
-    let mut bits = [[false; 8]; 8];
-    for row in &mut bits {
-        for c in 0..4 {
-            x ^= x << 13;
-            x ^= x >> 7;
-            x ^= x << 17;
-            let on = x % 100 < 48;
-            row[c] = on;
-            row[7 - c] = on;
-        }
-    }
-    let n = 8 * scale;
-    let mut rgba = vec![0u8; (n * n * 4) as usize];
-    for y in 0..n {
-        for xx in 0..n {
-            let on = bits[(y / scale) as usize][(xx / scale) as usize];
-            let c = if on { 242u8 } else { 17u8 };
-            let i = ((y * n + xx) * 4) as usize;
-            rgba[i..i + 4].copy_from_slice(&[c, c, c, 255]);
-        }
-    }
-    let px = Pixels::new();
-    px.set(n, n, rgba);
-    px
 }
 
 #[cfg(test)]
