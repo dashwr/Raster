@@ -1,6 +1,6 @@
 //! Settings: contas, agentes, memória, contexto, ferramentas, aparência e caminhos.
 
-use rune::{El, col, el, row, text};
+use rune::{El, col, el, row, text, text_input};
 use serde_json::json;
 
 use super::{LABEL, SMALL, STRONG, button, frame, icon, pal};
@@ -56,15 +56,35 @@ fn step(n: u64, up: bool) -> u64 {
 /// Contexto por modelo: teto do provedor e limite do usuário (o efetivo é o menor dos dois).
 fn models_frame(s: &State) -> El {
     let p = pal();
-    let mut c = col().gap(2.0).child(row().gap(10.0).py(2.0)
+    let all = s.all_models();
+    let hidden_n = all.iter().filter(|m| s.prefs.hidden_models.contains(&m.0)).count();
+    let tab = s.models_hidden_tab;
+    let tab_btn = |key: &'static str, label: String, on: bool, v: bool| el().key(key).h(22.0).px(10.0).center()
+        .fill(if on { p.text } else { p.bg })
+        .child(text(label).font(SMALL).color(if on { p.bg } else { p.dim }))
+        .on_press(move |s: &mut State| s.models_hidden_tab = v);
+    let tabs = row().key("mdl-tabs").border(1.0, p.dim)
+        .child(tab_btn("mdl-t-vis", format!("VISIBLE {}", all.len() - hidden_n), !tab, false))
+        .child(tab_btn("mdl-t-hid", format!("HIDDEN {hidden_n}"), tab, true));
+    let mut c = col().gap(2.0).child(row().pb(6.0).child(tabs)).child(row().gap(10.0).py(2.0)
         .child(text("MODEL").font(SMALL).color(p.faint).grow(1.0))
         .child(text("PROVIDER MAX").font(SMALL).color(p.faint).w(100.0))
-        .child(text("LIMIT").font(SMALL).color(p.faint).w(150.0)));
-    let models = s.models();
+        .child(text("LIMIT").font(SMALL).color(p.faint).w(150.0))
+        .child(el().w(56.0)));
+    let models: Vec<_> = all.into_iter().filter(|m| s.prefs.hidden_models.contains(&m.0) == tab).collect();
     if models.is_empty() {
-        c = c.child(text("No connected provider").font(SMALL).color(p.faint));
+        c = c.child(text(if tab { "No hidden models" } else { "No connected provider" }).font(SMALL).color(p.faint).py(4.0));
     }
     for (id, name) in models {
+        let h = id.clone();
+        let toggle = el().key(format!("mdl-h-{id}")).w(56.0).h(22.0).center().border(1.0, p.dim).hover(p.field)
+            .child(text(if tab { "Show" } else { "Hide" }).font(SMALL).color(p.text))
+            .on_press(move |s: &mut State| set(s, |p| {
+                if !p.hidden_models.remove(&h) {
+                    p.hidden_models.insert(h.clone());
+                }
+            }));
+        let short = id.split_once('/').map(|x| x.1).unwrap_or(&id).to_string();
         let max = super::ctx_max(&id);
         let eff = s.prefs.ctx_for(&id);
         let custom = s.prefs.ctx_limits.contains_key(&id);
@@ -88,12 +108,64 @@ fn models_frame(s: &State) -> El {
                 el().key(format!("lim-{id}-r")).hover(p.field).child(icon("refresh", p.dim))
                     .on_press(move |s: &mut State| set(s, |p| { p.ctx_limits.remove(&r); }))
             } else { el() });
-        c = c.child(row().key(format!("mdl-{id}")).h(28.0).gap(10.0).center_y()
-            .child(text(name).font(LABEL).color(p.text).grow(1.0).min_w(0.0).truncate())
+        c = c.child(row().key(format!("mdl-{id}")).h(30.0).gap(10.0).center_y()
+            .child(row().grow(1.0).min_w(0.0).gap(8.0).center_y()
+                .child(text(name).font(LABEL).color(if tab { p.dim } else { p.text }).truncate())
+                .child(text(short).font(SMALL).color(p.faint).truncate()))
             .child(text(max.map(tok).unwrap_or_else(|| "?".into())).font(SMALL).color(p.dim).w(100.0))
-            .child(lim));
+            .child(lim)
+            .child(toggle));
     }
     c.child(text("Effective context is your limit, capped by the provider's max. DCP soft and hard limits shrink to fit it.").font(SMALL).color(p.faint).wrap())
+}
+
+/// Estado do login em andamento: último passo, link da página, campo do código e erro.
+fn login_panel(s: &State, u: &crate::session::Session, prov: &str) -> El {
+    let p = pal();
+    let name = match prov {
+        "openai-codex" => "ChatGPT / Codex",
+        "google-gemini-cli" => "Gemini",
+        _ => prov,
+    };
+    let last_notice = u.items.iter().rev().find_map(|i| if let Item::Notice(t) = i { Some(t.clone()) } else { None });
+    let error = u.items.iter().rev().find_map(|i| if let Item::Error(t) = i { Some(t.clone()) } else { None });
+    let done = last_notice.as_deref().is_some_and(|t| t.starts_with("Signed in"));
+    let mut c = col().key("login").w_full().gap(8.0).px(10.0).py(10.0).border(1.0, p.text)
+        .child(row().gap(8.0).center_y()
+            .child(icon(if done { "check" } else if error.is_some() { "error" } else { "key" }, p.text))
+            .child(text(format!("Signing in to {name}")).font(STRONG).color(p.text).grow(1.0))
+            .child(el().key("login-x").hover(p.field).child(icon("close", p.dim)).on_press(|s: &mut State| s.login_provider = None)));
+    if let Some(t) = &last_notice {
+        c = c.child(text(t.clone()).font(SMALL).color(p.dim).wrap_anywhere());
+    }
+    if let Some(url) = u.login_url.clone().filter(|_| !done) {
+        let u2 = url.clone();
+        c = c.child(row().gap(8.0)
+            .child(button("login-open", "Open sign-in page").on_press(move |_: &mut State| {
+                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            }))
+            .child(button("login-copy", "Copy link").on_press_tx(move |_: &mut State, tx: &mut rune::Tx| tx.copy(u2.clone()))));
+    }
+    let open = u.items.iter().rposition(|i| matches!(i, Item::Ask { answer: None, .. }));
+    if let (Some(idx), false) = (open, done) {
+        let sid = u.id;
+        c = c.child(text("If the browser can't return to the app, paste the code or the full redirect URL:").font(SMALL).color(p.faint).wrap())
+            .child(row().gap(8.0).center_y()
+                .child(el().grow(1.0).h(26.0).px(6.0).border(1.0, p.dim).center_y().child(
+                    text_input(&s.ask_text, SMALL).key("login-code").w_full().single_line().placeholder("code or URL", p.faint).color(p.text)
+                        .on_edit(|s: &mut State| &mut s.ask_text)))
+                .child(button("login-send", "Submit").on_press(move |s: &mut State| {
+                    let v = s.ask_text.text.trim().to_string();
+                    s.ask_text.clear();
+                    if let Some(x) = s.by_id(sid) {
+                        x.answer(idx, json!({"value": v}), v.clone());
+                    }
+                })));
+    }
+    if let Some(e) = error {
+        c = c.child(row().gap(8.0).child(icon("warning", p.text)).child(text(e).font(SMALL).color(p.text).wrap_anywhere().grow(1.0).min_w(0.0)));
+    }
+    c
 }
 
 /// Botão de dropdown: abre um popover ancorado abaixo dele.
@@ -125,26 +197,23 @@ pub fn view(s: &State) -> El {
     let on = |id: &str| providers.iter().any(|p| p.0 == id && p.2);
     let status = |ok: bool| row().gap(6.0).center_y().child(icon(if ok { "check" } else { "lock" }, if ok { p.text } else { p.dim }))
         .child(text(if ok { "Connected" } else { "Not connected" }).font(SMALL).color(if ok { p.text } else { p.dim }));
+    let sign = |key: &'static str, prov: &'static str| button(key, if on(prov) { "Sign in again" } else { "Sign in" })
+        .on_press(move |s: &mut State| s.login(prov));
+    let gcp = el().w(220.0).h(24.0).px(6.0).border(1.0, p.dim).center_y().child(
+        text_input(&s.gcp_edit, SMALL).key("gcp").w_full().single_line().placeholder("project id (optional)", p.faint).color(p.text)
+            .on_edit(|s: &mut State| &mut s.gcp_edit),
+    );
     let mut acc = col().gap(6.0)
         .child(line("Claude", "Reuses this machine's Claude Code login", row().gap(8.0).center_y().child(status(s.logged_in))
             .child(button("cfg-claude", "Reload").on_press(|s: &mut State| s.logged_in = crate::auth::claude_logged_in()))))
-        .child(line("ChatGPT / Codex", "OAuth sign in through omp, opens the browser", row().gap(8.0).center_y().child(status(on("openai-codex")))
-            .child(button("cfg-codex", if on("openai-codex") { "Sign in again" } else { "Sign in" })
-                .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openai-codex"}))))))
-        .child(line("Gemini", "Google account OAuth (Gemini CLI flow), opens the browser", row().gap(8.0).center_y().child(status(on("google-gemini-cli")))
-            .child(button("cfg-gemini", if on("google-gemini-cli") { "Sign in again" } else { "Sign in" })
-                .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "google-gemini-cli"}))))))
+        .child(line("ChatGPT / Codex", "OAuth through omp, opens the browser", row().gap(8.0).center_y().child(status(on("openai-codex"))).child(sign("cfg-codex", "openai-codex"))))
+        .child(line("Gemini", "Google OAuth (Gemini CLI flow), opens the browser", row().gap(8.0).center_y().child(status(on("google-gemini-cli"))).child(sign("cfg-gemini", "google-gemini-cli"))))
+        .child(line("Google Cloud project", "Workspace accounts need one for Gemini (GOOGLE_CLOUD_PROJECT)", gcp))
         .child(row().child(button("cfg-refresh", "Refresh status").on_press(|s: &mut State| s.util_send(json!({"type": "get_login_providers"})))));
-    if let Some(u) = util {
-        for (idx, it) in u.items.iter().enumerate() {
-            let node = match it {
-                Item::Notice(t) => text(t.clone()).font(SMALL).color(p.dim).wrap().selectable(true),
-                Item::Error(t) => text(format!("Error: {t}")).font(SMALL).color(p.text).wrap(),
-                Item::Ask { .. } => super::transcript::ask_block(s, u.id, idx, it),
-                _ => continue,
-            };
-            acc = acc.child(node.key(format!("cfg-it-{idx}")));
-        }
+    if let Some(u) = util
+        && let Some(prov) = &s.login_provider
+    {
+        acc = acc.child(login_panel(s, u, prov));
     }
     c = c.child(frame("f-acc", "accounts", acc));
 

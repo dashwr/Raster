@@ -36,6 +36,10 @@ pub struct Prefs {
     pub dither: bool,
     pub fps: u32,
     pub font: u32,
+    /// Modelos escondidos dos seletores (provedor/id).
+    pub hidden_models: std::collections::BTreeSet<String>,
+    /// Projeto do Google Cloud para o login do Gemini (contas Workspace exigem).
+    pub gcp_project: String,
     /// Limite de contexto escolhido pelo usuário por modelo (provedor/id → tokens).
     pub ctx_limits: std::collections::BTreeMap<String, u64>,
     /// Modelo e effort padrão por agente (nome → (modelo, effort)); vazio usa o padrão do agente.
@@ -48,7 +52,7 @@ impl Default for Prefs {
             sub_invoke: true, max_parallel: 4, vault: true, vault_nudge: true, vault_first: true,
             dcp_soft: 50_000, dcp_hard: 100_000, dcp_every: 5, dcp_dedup: true,
             rtk: true, ask_destructive: true, ask_timeout: 120,
-            dither: true, fps: 8, font: 13, agents: Default::default(), ctx_limits: Default::default(),
+            dither: true, fps: 8, font: 13, agents: Default::default(), ctx_limits: Default::default(), hidden_models: Default::default(), gcp_project: String::new(),
         }
     }
 }
@@ -203,6 +207,20 @@ pub fn demo_settings(s: &mut State) {
     demo(s);
     s.view = crate::View::Configs;
     crate::ui::reload_catalog();
+}
+
+pub fn demo_login(s: &mut State) {
+    demo_settings(s);
+    let mut u = Session::new(crate::UTIL_ID, Agent::Search, "/tmp".into());
+    u.login_url = Some("https://accounts.google.com/o/oauth2/v2/auth?client_id=681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com&response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A8085".into());
+    u.items = vec![
+        Item::Notice("Opened the sign-in page in your browser".into()),
+        Item::Notice("Waiting for browser authentication...".into()),
+        Item::Ask { req: "x".into(), kind: AskKind::Input { title: "Paste the authorization code".into() }, answer: None },
+        Item::Error("This account requires setting the GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_PROJECT_ID environment variable. See https://goo.gle/gemini-cli-auth-docs#workspace-gca".into()),
+    ];
+    s.util = Some(u);
+    s.login_provider = Some("google-gemini-cli".into());
 }
 
 pub fn demo_attach(s: &mut State) {

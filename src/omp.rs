@@ -104,6 +104,7 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
         .env("RASTER_DCP_MIN", (prefs.dcp_soft as u64).min(ctx / 2).to_string())
         .env("RASTER_DCP_MAX", (prefs.dcp_hard as u64).min(ctx * 85 / 100).to_string())
         .env("RASTER_CTX_LIMIT", ctx.to_string())
+        .envs((!prefs.gcp_project.is_empty()).then(|| [("GOOGLE_CLOUD_PROJECT", prefs.gcp_project.clone())]).into_iter().flatten())
         .env("RASTER_DCP_FREQ", prefs.dcp_every.to_string())
         .env("RASTER_DCP_DEDUP", flag(prefs.dcp_dedup))
         .env("RASTER_VAULT", flag(prefs.vault))

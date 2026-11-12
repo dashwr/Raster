@@ -97,7 +97,6 @@ pub struct State {
     pub attachments: Vec<PathBuf>,
     /// Miniaturas dos anexos de imagem, decodificadas fora da thread da UI.
     pub previews: std::collections::HashMap<PathBuf, rune::Image>,
-    pub images: Option<rune::ImageCache>,
     pub prefs: store::Prefs,
     /// Quadros por segundo do campo de fundo (0 = parado), lido pela thread do dither.
     pub fps: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -108,6 +107,11 @@ pub struct State {
     pub new_model: Option<String>,
     pub new_effort: Option<String>,
     pub catalog_at: f64,
+    /// Settings: aba "hidden" do card de modelos e campo do projeto do Gemini.
+    pub models_hidden_tab: bool,
+    /// Provedor do login OAuth em andamento, mostrado no Settings.
+    pub login_provider: Option<String>,
+    pub gcp_edit: TextEdit,
 }
 
 impl State {
@@ -142,7 +146,6 @@ impl State {
             decode_t0: 0.0,
             attachments: Vec::new(),
             previews: Default::default(),
-            images: None,
             prefs: store::Prefs::load(),
             fps: Default::default(),
             aurora: Pixels::new(),
@@ -150,8 +153,12 @@ impl State {
             new_model: None,
             new_effort: None,
             catalog_at: -100.0,
+            models_hidden_tab: false,
+            login_provider: None,
+            gcp_edit: TextEdit::new(""),
         };
         store::load(&mut s);
+        s.gcp_edit = TextEdit::new(s.prefs.gcp_project.clone());
         s.composer.focused = true;
         s
     }
@@ -181,6 +188,16 @@ impl State {
             return;
         }
         let _ = u.send(v);
+    }
+
+    /// Começa um login OAuth: limpa o registro anterior e mostra o painel do provedor.
+    pub fn login(&mut self, provider: &str) {
+        if let Some(u) = self.util.as_mut() {
+            u.items.clear();
+            u.login_url = None;
+        }
+        self.login_provider = Some(provider.into());
+        self.util_send(serde_json::json!({"type": "login", "providerId": provider}));
     }
 
     pub fn open_configs(&mut self) {
@@ -225,9 +242,9 @@ impl State {
                 continue;
             }
             if session::image_mime(&p).is_some()
-                && let (Some(c), Ok(bytes)) = (&self.images, std::fs::read(&p))
+                && let Some(img) = ui::media::file(&p)
             {
-                self.previews.insert(p.clone(), c.load(bytes));
+                self.previews.insert(p.clone(), img);
             }
             self.attachments.push(p);
         }
@@ -254,6 +271,10 @@ impl State {
     /// Modelos com credencial válida, do catálogo que a extensão grava (`ompdsh/models.json`);
     /// sem ele, a lista curada dos provedores conectados.
     pub fn models(&self) -> Vec<(String, String)> {
+        self.all_models().into_iter().filter(|m| !self.prefs.hidden_models.contains(&m.0)).collect()
+    }
+
+    pub fn all_models(&self) -> Vec<(String, String)> {
         let cat = ui::catalog();
         if !cat.is_empty() {
             return cat;
@@ -354,6 +375,15 @@ fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
         }
     }
     s.sync_prefs();
+    let gcp = s.gcp_edit.text.trim().to_string();
+    if gcp != s.prefs.gcp_project {
+        s.prefs.gcp_project = gcp;
+        s.prefs.save();
+        // a sessão utilitária lê o projeto no spawn; recomeça na próxima ação
+        if let Some(mut u) = s.util.take() {
+            u.stop();
+        }
+    }
     if clock - s.catalog_at > 5.0 {
         s.catalog_at = clock;
         ui::reload_catalog();
@@ -427,7 +457,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
 fn setup(s: &mut State, waker: rune::Waker) {
     ui::transcript::tick_clock(s.time.clone(), waker.clone());
     swarm::watch(s.swarm.clone(), waker.clone());
-    s.images = Some(rune::ImageCache::new(waker.clone()));
+    ui::media::init(waker.clone());
     s.waker = Some(waker);
     s.sync_prefs();
     ui::dither::animate(s.bg.clone(), 1280, 800, s.fps.clone());
@@ -510,7 +540,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode), ("demo-agent-model", store::demo_agent_model), ("demo-attach", store::demo_attach)],
+        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode), ("demo-agent-model", store::demo_agent_model), ("demo-attach", store::demo_attach), ("demo-login", store::demo_login)],
         min_size: Some((820.0, 520.0)),
         ..AppSpec::new("Raster", (1280.0, 800.0), State::new, view)
     });

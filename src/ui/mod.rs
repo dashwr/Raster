@@ -4,6 +4,7 @@ pub mod composer;
 pub mod config;
 pub mod decode;
 pub mod dither;
+pub mod media;
 pub mod panel;
 pub mod sidebar;
 pub mod transcript;

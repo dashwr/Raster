@@ -82,6 +82,8 @@ pub struct Session {
     pub pending_labels: Vec<(String, String)>,
     /// Provedores de login (id, nome, autenticado), da resposta a `get_login_providers`.
     pub providers: Vec<(String, String, bool)>,
+    /// Página de login OAuth aberta por último (para reabrir ou copiar).
+    pub login_url: Option<String>,
 }
 
 impl Session {
@@ -102,6 +104,7 @@ impl Session {
             subs: Vec::new(),
             pending_labels: Vec::new(),
             providers: Vec::new(),
+            login_url: None,
         }
     }
 
@@ -175,7 +178,7 @@ impl Session {
             p.stop();
         }
         self.status = Status::Stopped;
-        self.items.push(Item::Notice("sessão encerrada; mande uma mensagem para reabrir".into()));
+        self.items.push(Item::Notice("Session ended; send a message to reopen".into()));
     }
 
     pub fn set_model(&mut self, model: &str) {
@@ -208,7 +211,7 @@ impl Session {
     pub fn on_exit(&mut self) {
         if self.proc.take().is_some() {
             self.status = Status::Stopped;
-            self.items.push(Item::Notice("o processo da sessão saiu".into()));
+            self.items.push(Item::Notice("The session process exited".into()));
         }
     }
 
@@ -361,7 +364,7 @@ impl Session {
                         && *req == target
                         && answer.is_none()
                     {
-                        *answer = Some("(cancelado)".into());
+                        *answer = Some("(cancelled)".into());
                     }
                 }
                 return;
@@ -369,7 +372,8 @@ impl Session {
             "open_url" => {
                 let url = s("url");
                 let _ = std::process::Command::new("xdg-open").arg(&url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
-                self.items.push(Item::Notice(format!("abri no navegador: {url}")));
+                self.login_url = Some(url);
+                self.items.push(Item::Notice("Opened the sign-in page in your browser".into()));
                 if let Some(i) = v["instructions"].as_str() {
                     self.items.push(Item::Notice(i.to_string()));
                 }

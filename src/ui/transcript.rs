@@ -52,7 +52,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
                 if !t.is_empty() {
                     let style = MarkdownStyle::from_kit(kit()).diagram_max_width(640.0).body_font(super::body(s));
                     let shown = if *streaming { super::decode::streaming(t, s.clock) } else { dec(t) };
-                    c = c.child(Markdown::new(shown).style(style).streaming(*streaming).build(kit()));
+                    c = c.child(Markdown::new(shown).style(style).streaming(*streaming).images(super::media::source).build(kit()));
                 }
                 c
             }
@@ -120,13 +120,6 @@ fn tools(s: &State, sid: u64, idx: usize, calls: &[crate::session::ToolCall], op
         c = c.child(body);
     }
     c
-}
-
-pub fn ask_block(s: &State, sid: u64, idx: usize, it: &Item) -> El {
-    match it {
-        Item::Ask { kind, answer, .. } => ask(s, sid, idx, kind, answer.as_deref(), answer.is_none()),
-        _ => col(),
-    }
 }
 
 fn ask(s: &State, sid: u64, idx: usize, kind: &AskKind, answer: Option<&str>, active: bool) -> El {
