@@ -325,7 +325,7 @@ fn probe(msg: String) -> ! {
             continue;
         }
         let subs_busy = sess.subs.iter().any(|x| x.status == session::SubStatus::Working);
-        if saw_work && (matches!(sess.status, Status::Stopped | Status::Asking) || (sess.status == Status::Idle && !subs_busy)) {
+        if sess.status == Status::Stopped || saw_work && (matches!(sess.status, Status::Stopped | Status::Asking) || (sess.status == Status::Idle && !subs_busy)) {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));

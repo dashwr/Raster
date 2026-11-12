@@ -106,7 +106,9 @@ function shapePayload(p: any): any {
 		.filter((b: any) => typeof b?.text === "string" && /^You are Claude Code|billing/i.test(b.text))
 		.map(({ cache_control: _, ...b }: any) => b);
 	p.system = [...keep, { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }];
-	p.tools = activeTools();
+	// Raster: tools MCP (basic-memory) registradas pelo omp continuam visíveis na raiz
+	const mcp = DEPTH === 0 ? p.tools.filter((t: any) => typeof t?.name === "string" && stripPrefix(t.name).startsWith("mcp__")).map(({ cache_control: _, ...t }: any) => ({ ...t, name: stripPrefix(t.name) })) : [];
+	p.tools = [...activeTools(), ...mcp];
 	delete p.tool_choice;
 	p.thinking = { budget_tokens: 2048, display: "summarized", type: "enabled" };
 	p.max_tokens = 128000;
@@ -656,9 +658,14 @@ export default function ompDsh(pi: ExtensionAPI) {
 		} as any);
 	}
 
-	pi.on("session_start", async () => {
-		await pi.setActiveTools(activeTools().map(t => t.name));
-	});
+	// tools MCP chegam depois do session_start (descoberta assíncrona); ressincroniza a cada turno
+	const syncTools = async () => {
+		const mcp = DEPTH === 0 ? pi.getAllTools().map((t: any) => t.name).filter((n: string) => n.startsWith("mcp__")) : [];
+		if (process.env.RASTER_DEBUG_TOOLS) console.error("raster tools", pi.getAllTools().length, mcp.join(","));
+		await pi.setActiveTools([...activeTools().map(t => t.name), ...mcp]);
+	};
+	pi.on("session_start", syncTools);
+	pi.on("before_agent_start", syncTools);
 	pi.on("agent_start", () => {
 		busy = true;
 	});

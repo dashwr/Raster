@@ -61,12 +61,11 @@ pub fn runtime_dir() -> PathBuf {
     if let Ok(d) = std::env::var("RASTER_RUNTIME") {
         return d.into();
     }
+    // ao lado do executável ou em um ancestral (target/release/raster → raiz do repo)
     let exe = std::env::current_exe().ok();
-    let beside = exe.as_ref().and_then(|e| e.parent()).map(|d| d.join("runtime"));
-    match beside {
-        Some(d) if d.join("dsh/dsh.ts").exists() => d,
-        _ => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"),
-    }
+    exe.as_ref()
+        .and_then(|e| e.ancestors().skip(1).map(|d| d.join("runtime")).find(|d| d.join("dsh/dsh.ts").exists()))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"))
 }
 
 pub fn state_dir() -> PathBuf {
@@ -85,7 +84,7 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
 
     let mut cmd = Command::new(&omp);
     cmd.args(["--mode", "rpc", "--no-title", "--model", s.model, "--thinking", s.thinking, "--auto-approve"])
-        .args(["--no-tools", "--no-context-files", "--no-skills", "--no-rules", "--no-extensions"])
+        .args(["--no-tools", "--no-context-files", "--no-skills", "--no-rules"])
         .arg("-e")
         .arg(rt.join("dsh/dsh.ts"))
         .arg("--session-dir")
@@ -97,6 +96,7 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
         .env("OMPDSH_AGENT_ID", format!("session-{}", s.sid))
         .env("RASTER_OMP", &omp)
         .env("RASTER_KEEPALIVE", "1")
+        .env("RASTER_VAULT_NUDGE", "1")
         .env("RASTER_PROMPT_FILES", prompts.join(":"))
         .env("RASTER_AGENTS_DIR", crate::agents::agents_dir())
         .env("RASTER_CENTER", st.join("Center.md"))
