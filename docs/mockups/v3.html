@@ -1,0 +1,253 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Raster v3</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Silkscreen&family=VT323&display=swap">
+<style>
+/* layout: one consolidated system, two variants (mono, amber). Box frames + hard square shadows,
+   desk dotted separators and dithered gray fills, scope segmented meters, desk slider thumb. */
+:root { color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; background: #050505; color: #ddd; font: 13px/1.5 "JetBrains Mono", monospace; padding: 24px }
+.shot { margin-bottom: 40px }
+.shot h2 { margin: 0 0 12px; font: 600 14px "JetBrains Mono", monospace }
+
+.app { --bg: #000; --ink: #ececec; --dim: #8a8a8a; --faint: #3a3a3a; --sh: #2e2e2e; --danger: #ff6d5e;
+  --font: "JetBrains Mono", monospace; --title: "Silkscreen", monospace; --fs: 13px;
+  width: 1200px; height: 720px; position: relative; overflow: hidden; display: grid; grid-template-columns: 252px 1fr 212px;
+  background: var(--bg); color: var(--ink); font: var(--fs)/20px var(--font) }
+.app.amber { --bg: #0a0705; --ink: #ffb54d; --dim: #a8742c; --faint: #4a3311; --sh: #3a280d; --danger: #ff7d4d;
+  --font: "VT323", monospace; --fs: 18px; text-shadow: 0 0 5px rgba(255,181,77,.28) }
+button { color: inherit; font: inherit; background: none; border: 0; padding: 0; text-shadow: inherit }
+svg.i { width: 16px; height: 16px; flex: none; shape-rendering: crispEdges; fill: currentColor }
+.row { display: flex; align-items: center; gap: 8px }
+.grow { flex: 1; min-width: 0 }
+.trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.dim { color: var(--dim) }
+
+/* dithered fills (the "grayed out" desk look) */
+.d1 { background: repeating-conic-gradient(var(--faint) 0 25%, transparent 0 50%) 0 0 / 2px 2px }
+.d2 { background: repeating-conic-gradient(var(--dim) 0 25%, transparent 0 50%) 0 0 / 2px 2px }
+.d3 { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 3px) }
+.d4 { background: radial-gradient(var(--dim) 0.6px, transparent 0.8px) 0 0 / 3px 3px }
+.d5 { background: var(--ink) }
+
+/* frames: titled boxes with hard square shadows */
+.frame { position: relative; border: 1px solid var(--dim); padding: 14px 10px 10px; margin: 12px 10px 0; display: flex; flex-direction: column; gap: 8px; box-shadow: 4px 4px 0 var(--sh) }
+.frame > .t { position: absolute; top: -10px; left: 8px; padding: 0 5px; background: var(--bg); color: var(--dim); font: 11px/20px var(--title); letter-spacing: .5px }
+.app.amber .frame > .t { font: 16px/20px var(--font) }
+.sep { border: 0; border-top: 1px dotted var(--dim); margin: 2px 0 }
+
+/* sidebar */
+.side, .main, .panel { min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative }
+.logo { font: 18px/1 var(--title); letter-spacing: 1px; padding: 14px 12px 0 }
+.logo small { font: 11px var(--font); color: var(--dim); letter-spacing: 0 }
+.app.amber .logo small { font-size: 15px }
+.btn { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border: 1px solid var(--dim); box-shadow: 3px 3px 0 var(--sh) }
+.btn kbd { margin-left: auto; font: inherit; color: var(--dim); font-size: .85em }
+.btn.solid { background: var(--ink); color: var(--bg); border-color: var(--ink); text-shadow: none }
+.btn.solid kbd { color: var(--bg); opacity: .6 }
+.sw { position: relative; display: grid; grid-template-columns: 1fr 1fr; height: 24px; border: 1px solid var(--dim); box-shadow: 3px 3px 0 var(--sh) }
+.sw > span { position: relative; z-index: 1; text-align: center; line-height: 22px; color: var(--dim) }
+.sw > span.on { color: var(--bg); text-shadow: none }
+.sw .thumb { position: absolute; top: 0; bottom: 0; width: 50%; left: 50%; background: var(--ink) }
+.sw.left .thumb { left: 0 }
+.sw::before { content: ""; position: absolute; inset: 0; background: repeating-conic-gradient(var(--faint) 0 25%, transparent 0 50%) 0 0 / 2px 2px }
+.dir { color: var(--dim); font-size: .85em; margin-top: 4px }
+.s { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 4px 0 0 }
+.s.sel { background: var(--faint) }
+.s .st { margin-left: auto; width: 16px; display: flex; justify-content: center }
+.sq { width: 22px; height: 22px; border: 1px solid var(--dim); display: grid; place-items: center; flex: none; background: var(--bg) }
+.s.sel .sq { border-color: var(--ink) }
+
+/* chat */
+.main { border-left: 1px solid var(--dim); border-right: 1px solid var(--dim) }
+.mhead { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px; border-bottom: 1px dotted var(--dim) }
+.mhead .p { color: var(--dim); margin-left: auto }
+.transcript { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 14px; padding: 16px }
+.u { align-self: flex-end; max-width: 74%; border: 1px solid var(--ink); padding: 6px 10px; box-shadow: 4px 4px 0 var(--sh) }
+.transcript p { margin: 0 0 6px }
+table.md { border-collapse: collapse }
+table.md td, table.md th { border: 1px solid var(--faint); padding: 0 10px; text-align: left; font-weight: 400 }
+table.md th { color: var(--dim) }
+.tools { border-top: 1px dotted var(--dim); border-bottom: 1px dotted var(--dim); padding: 6px 0; color: var(--dim) }
+.tools .row b { color: var(--ink); font-weight: 400 }
+.ask { border: 1px solid var(--ink); padding: 10px 12px; box-shadow: 4px 4px 0 var(--sh); display: flex; flex-direction: column; gap: 4px }
+.opt { display: flex; gap: 10px; padding: 3px 6px }
+.opt.sel { background: var(--faint) }
+.opt small { color: var(--dim); display: block }
+.composer { border-top: 1px dotted var(--dim); padding: 10px 14px 12px }
+.cin { color: var(--dim); padding-bottom: 10px }
+.cin::after { content: "█"; color: var(--ink) }
+.cb { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 7px; border: 1px solid var(--dim); box-shadow: 3px 3px 0 var(--sh) }
+.cb.agent { border-color: var(--ink) }
+.cb.send { background: var(--ink); color: var(--bg); border-color: var(--ink); text-shadow: none }
+.ctxbar { width: 10px; height: 26px; border: 1px solid var(--ink); display: flex; flex-direction: column-reverse; box-shadow: 3px 3px 0 var(--sh) }
+.ctxbar i { display: block }
+
+/* popovers */
+.pop, .menu { position: absolute; z-index: 5; background: var(--bg); border: 1px solid var(--ink); box-shadow: 5px 5px 0 var(--sh); padding: 6px 0 }
+.pop .h { color: var(--dim); padding: 0 10px 4px; font: 11px/20px var(--title) }
+.app.amber .pop .h { font: 16px/20px var(--font) }
+.it { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 24px }
+.it.sel { background: var(--faint) }
+.it small, .it kbd { margin-left: auto; color: var(--dim); font: inherit; font-size: .85em }
+.menu .danger { color: var(--danger) }
+/* effort: scope's segmented meter + desk's slider thumb */
+.effort { margin: 4px 10px 2px; position: relative }
+.cells { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; height: 12px }
+.cells i { border: 1px solid var(--faint) }
+.cells i.f { background: var(--ink); border-color: var(--ink) }
+.thumb2 { position: absolute; top: -4px; width: 12px; height: 20px; background: var(--bg); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--sh); transform: translateX(-50%) }
+.labels { display: grid; grid-template-columns: repeat(5, 1fr); text-align: center; color: var(--dim); font-size: .8em; padding-top: 6px }
+.labels .on { color: var(--ink) }
+/* context card: vertical bar with a dither per part */
+.ctxcard { display: flex; gap: 14px; padding: 10px 12px; width: 268px }
+.vbar { width: 22px; height: 168px; border: 1px solid var(--ink); display: flex; flex-direction: column-reverse; box-shadow: 3px 3px 0 var(--sh) }
+.vbar i { display: block; border-top: 1px solid var(--bg) }
+.legend { display: flex; flex-direction: column; gap: 4px; flex: 1 }
+.legend .row span:last-child { margin-left: auto; color: var(--dim) }
+.chip { width: 12px; height: 12px; border: 1px solid var(--dim); flex: none }
+
+/* swarm and background */
+.swarm { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px }
+.mate { display: flex; flex-direction: column; align-items: center; gap: 4px }
+.mate .box { width: 36px; height: 36px; border: 1px solid var(--dim); display: grid; place-items: center; box-shadow: 2px 2px 0 var(--sh) }
+.mate .box.busy { border-color: var(--ink) }
+.mate canvas { width: 32px; height: 32px; image-rendering: pixelated }
+.app.amber .mate canvas { filter: sepia(1) saturate(5) hue-rotate(-14deg) brightness(.95) }
+.mate .act { color: var(--dim); height: 16px; display: flex; align-items: center }
+.mate .act.busy { color: var(--ink) }
+.job { display: flex; align-items: center; gap: 8px; color: var(--dim) }
+.job b { color: var(--ink); font-weight: 400 }
+pre.out { margin: 0; border: 1px dotted var(--dim); padding: 4px 6px; color: var(--dim); font: 11px/16px "JetBrains Mono", monospace; white-space: pre-wrap }
+.app.amber pre.out { font: 15px/16px var(--font) }
+.braille { display: inline-block; width: 7px; height: 13px; flex: none }
+.braille svg { width: 7px; height: 13px; display: block; fill: currentColor; shape-rendering: crispEdges }
+</style>
+
+<div id="out"></div>
+<script>
+const I = {
+  open: ["............","..########..","..#......#..","..#......#..","..#..##..#..","..#..###.#..","..#..####...","..#..##.....","..#.........","..#####.....","............","............"],
+  stop: ["............","............","..########..","..########..","..##....##..","..##....##..","..##....##..","..##....##..","..########..","..########..","............","............"],
+  trash: ["....####....","..########..","............","...######...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...######...","............","............"],
+  copy: ["............","....######..","....#....#..","..######.#..","..#....#.#..","..#....#.#..","..#....###..","..#....#....","..######....","............","............","............"],
+  rename: ["............","..........#.",".........###","........###.",".......###..","......###...",".....###....","....###.....","....##......","..######....","............","............"],
+  plus: ["............",".....##.....",".....##.....",".....##.....",".....##.....","..########..","..########..",".....##.....",".....##.....",".....##.....",".....##.....","............"],
+  search: ["............","...####.....","..#....#....",".#......#...",".#......#...",".#......#...","..#....#....","...#####....",".......##...","........##..",".........##.","............"],
+  chat: ["............",".##########.",".#........#.",".#.##.###.#.",".#........#.",".#.####...#.",".#........#.",".####.#####.","....#.#.....","....##......","............","............"],
+  code: ["............","............","...#....#...","..#....#....",".#....#.....","#.....#.....",".#...#......","..#..#......","...##.......","............","............","............"],
+  find: ["............","....###.....","...#...#....","..#.#...#...","..#.....#...","..#.....#...","...#...#....","....####....","......##....",".......##...","........#...","............"],
+  test: ["............","..........#.",".........##.","........##..","#......##...","##....##....",".##..##.....","..####......","...##.......","............","............","............"],
+  gear: ["............",".....##.....","..#.####.#..","...######...","..###..###..",".###....###.",".###....###.","..###..###..","...######...","..#.####.#..",".....##.....","............"],
+  folder: ["............","............",".####.......",".#...#####..",".#........#.",".##########.",".#........#.",".#........#.",".#........#.",".##########.","............","............"],
+  provA: ["............",".....#......",".....#......","..#..#..#...","...#.#.#....","....###.....","#####.#####.","....###.....","...#.#.#....","..#..#..#...",".....#......",".....#......"],
+  provO: ["............","....####....","..##....##..",".#..####..#.",".#.#....#.#.","#.#......#.#","#.#......#.#",".#.#....#.#.",".#..####..#.","..##....##..","....####....","............"],
+  send: ["............",".....##.....","....####....","...######...","..##.##.##..",".....##.....",".....##.....",".....##.....",".....##.....",".....##.....","............","............"],
+  term: ["............",".##########.",".#........#.",".#.#......#.",".#..#.....#.",".#.#......#.",".#....###.#.",".#........#.",".##########.","............","............","............"],
+  ctx: ["............","....####....","....#..#....","....#..#....","....#..#....","....####....","....####....","....####....","....####....","....####....","............","............"],
+  key: ["............","..####......",".#....#.....",".#.##.#.....",".#....######","..####...#.#","..........#.","............","............","............","............","............"],
+  brain: ["............","...##.##....","..#..#..#...",".#...#...#..",".#.#.#.#.#..",".#...#...#..","..#..#..#...","...#.#.#....","....###.....",".....#......","............","............"],
+  think: ["............","...######...","..#......#..","........##..",".......##...","......##....",".....##.....",".....##.....","............",".....##.....","............","............"],
+  wrench: ["............","........##..",".......#..#.",".......#.##.","......##....",".....##.....","....##......","...##.......","..##........",".##.........","............","............"],
+  pen: ["............","..........#.",".........###","........###.",".......###..","......###...",".....###....","....###.....","....##......","...#........","............","............"],
+  zzz: ["............",".######.....",".....#......","....#.......","...#........",".######.....","............","......####..","........#...",".......#....","......####..","............"],
+};
+const svg = n => { let r = ""; I[n].forEach((row, y) => { for (let x = 0; x < 12; x++) if (row[x] === "#") r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }); return `<svg class="i" viewBox="0 0 12 12" aria-hidden="true">${r}</svg>`; };
+// braille drawn as dots (fonts often lack U+2800); bits are the dots
+const DOTS = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
+const SPIN = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
+const braille = ch => { const b = ch.codePointAt(0) - 0x2800; let r = ""; DOTS.forEach(([x, y], i) => { if (b & (1 << i)) r += `<rect x="${1 + x * 3}" y="${1 + y * 3}" width="2" height="2"/>`; }); return `<span class="braille" data-spin><svg viewBox="0 0 7 13">${r}</svg></span>`; };
+
+const BODIES = {
+  blob: ["................","................",".....######.....","...##########...","..############..",".##############.",".##############.","################","################","################","################",".##############.",".##############.","..##.##..##.##..","................","................"],
+  cat: ["................","..#..........#..","..##........##..","..###......###..","..############..",".##############.",".##############.",".##############.",".##############.",".##############.","..############..","...##########...","...##......##...","...##......##...","................","................"],
+  ghost: ["................","......####......","....########....","...##########...","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..##.##..##.##..","..#...#..#...#..","................"],
+  bot: [".......##.......",".......##.......","...##########...","...##########...","..############..","..############..","..############..","..############..","..############..","..############..","...##########...","....########....","....##....##....","...###....###...","................","................"],
+};
+const FACE = { think: [[5, 6], [6, 6], [9, 6], [10, 6], [7, 10], [8, 10]], wrench: [[5, 6], [5, 7], [10, 6], [10, 7], [6, 10], [7, 9], [8, 9], [9, 10]], pen: [[5, 7], [6, 7], [9, 7], [10, 7], [6, 9], [7, 10], [8, 10], [9, 9]], zzz: [[5, 7], [6, 7], [9, 7], [10, 7], [7, 10], [8, 10]] };
+function sprite(body, act) {
+  const c = document.createElement("canvas"); c.width = c.height = 16; const g = c.getContext("2d"); const s = BODIES[body];
+  g.fillStyle = "#e9e9e9"; s.forEach((row, y) => { for (let x = 0; x < 16; x++) if (row[x] === "#") g.fillRect(x, y, 1, 1); });
+  g.fillStyle = "#000"; FACE[act].forEach(([x, y]) => g.fillRect(x, y, 1, 1));
+  return c;
+}
+
+const PARTS = [["system prompt", 9, "d5"], ["tools", 9, "d3"], ["messages", 52, "d2"], ["tool output", 9, "d4"], ["compressed", 5, "d1"]];
+
+function app(v) {
+  const side = `<aside class="side"><div class="logo">RASTER <small>v0.3.0</small></div>
+    <div class="frame"><span class="t">sessions</span>
+      <div class="btn solid">${svg("plus")}<span>New session</span><kbd>Ctrl N</kbd></div>
+      <div class="btn">${svg("search")}<span>Search</span><kbd>Ctrl K</kbd></div>
+      <div class="sw"><i class="thumb"></i><span>active</span><span class="on">all</span></div>
+      <hr class="sep">
+      ${[["raster", [["code", "compose popovers", "spin", 1], ["test", "e2e: login flow", "?"], ["chat", "naming notes", ""]]], ["ncrm", [["code", "webhook retries", "spin"], ["find", "sqlite wal limits", ""]]]].map(([d, xs], gi) =>
+        `${gi ? '<hr class="sep">' : ""}<div class="dir">${d}</div>${xs.map(([a, t, st, sel]) => `<div class="s${sel ? " sel" : ""}"><span class="sq">${svg(a)}</span><span class="trunc grow">${t}</span><span class="st">${st === "spin" ? braille(SPIN[gi * 3]) : st === "?" ? braille("⠿") + "?" : ""}</span></div>`).join("")}`).join("")}
+    </div><div class="grow"></div>
+    <div class="row" style="padding:12px;border-top:1px dotted var(--dim)">${svg("gear")}<span>Settings</span><span class="grow"></span><span class="dim" style="font-size:.85em">Ctrl ,</span></div></aside>`;
+
+  const main = `<main class="main">
+    <div class="mhead"><span class="sq">${svg("code")}</span><span>compose popovers</span><span class="p">~/projects/raster</span></div>
+    <div class="transcript">
+      <div class="u">The popovers open in the middle of the chat. Anchor each one to the button that opens it.</div>
+      <div><p>They render inside the transcript column, so they center on it. I'll move them to an overlay layer placed from the button's rect.</p>
+        <table class="md"><tr><th>popover</th><th>anchor</th><th>opens</th></tr><tr><td>model · effort</td><td>model button</td><td>above, left edge</td></tr><tr><td>context</td><td>context bar</td><td>right of the bar</td></tr></table></div>
+      <div class="tools"><div class="row">${svg("term")}<b>bash</b><span class="grow trunc">rg -n "Popover::" src/ui</span><span>✓</span></div>
+        <div class="row">${svg("open")}<b>read</b><span class="grow trunc">src/ui/composer.rs</span><span>✓</span></div>
+        <div class="row">${svg("term")}<b>bash</b><span class="grow trunc">cargo check</span>${braille(SPIN[2])}</div></div>
+      <div class="ask"><div>Where should the effort control live?</div>
+        <div class="opt sel"><span>(•)</span><div>Inside the model popover<small>one place for model and effort</small></div></div>
+        <div class="opt"><span>( )</span><div>Its own popover<small>opened from the effort label</small></div></div></div>
+    </div>
+    <div class="composer"><div class="cin">Message code</div><div class="row" style="gap:8px">
+      <button class="cb" aria-label="Attach or mention">${svg("plus")}</button>
+      <button class="cb agent" aria-label="Agent">${svg("code")}</button>
+      <button class="cb">${svg("provA")}<span>Opus 5.5 · high</span></button>
+      <span class="grow"></span>
+      <span class="ctxbar" title="84k of 200k">${PARTS.map(([, k, c]) => `<i class="${c}" style="height:${k / 2}%"></i>`).join("")}</span>
+      <button class="cb send" aria-label="Send">${svg("send")}</button></div></div>
+
+    <div class="pop" style="left:54px;bottom:54px;width:270px">
+      <div class="h">model · connected</div>
+      ${[["Opus 5.5", 1], ["Sonnet 5.5"], ["Haiku 5.5"], ["Fable 5.1"]].map(([n, s]) => `<div class="it${s ? " sel" : ""}">${svg("provA")}<span>${n}</span><small>Claude</small></div>`).join("")}
+      <hr class="sep" style="margin:6px 10px">
+      <div class="h">effort</div>
+      <div class="effort"><div class="cells">${[1, 1, 1, 0, 0].map(f => `<i class="${f ? "f" : ""}"></i>`).join("")}</div><span class="thumb2" style="left:50%"></span>
+        <div class="labels"><span>low</span><span>medium</span><span class="on">high</span><span>xhigh</span><span>max</span></div></div>
+    </div>
+    <div class="pop ctxcard" style="right:52px;bottom:54px">
+      <div class="vbar">${PARTS.map(([, k, c]) => `<i class="${c}" style="height:${k / 2}%"></i>`).join("")}</div>
+      <div class="legend"><div class="row"><span>${svg("ctx")}</span><span>Context</span><span>84k / 200k</span></div><hr class="sep">
+        ${PARTS.map(([n, k, c]) => `<div class="row"><span class="chip ${c}"></span><span>${n}</span><span>${k}k</span></div>`).join("")}
+        <div class="row"><span class="chip"></span><span>free</span><span>116k</span></div>
+        <hr class="sep"><div class="row dim">Compress older turns</div></div>
+    </div>
+  </main>`;
+
+  const mates = [["blob", "think", 1], ["cat", "wrench", 1], ["bot", "pen", 1], ["ghost", "zzz", 0]];
+  const panel = `<aside class="panel">
+    <div class="frame" style="margin-top:22px"><span class="t">swarm · 4</span>
+      <div class="swarm">${mates.map(([b, a, busy], i) => `<div class="mate" title="subagent"><span class="box${busy ? " busy" : ""}"><canvas data-b="${b}" data-a="${a}"></canvas></span><span class="act${busy ? " busy" : ""}">${a === "think" ? braille(SPIN[i]) : svg(a)}</span></div>`).join("")}</div></div>
+    <div class="frame" style="margin-top:22px"><span class="t">background · 2</span>
+      <div class="job">${braille(SPIN[5])}<b class="grow trunc">cargo check</b><span>12s</span></div>
+      <pre class="out">Checking rune v0.4.0
+Checking raster v0.3.0</pre>
+      <hr class="sep">
+      <div class="job"><span>✓</span><b class="grow trunc">rg -n "Popover::"</b><span>0.1s</span></div></div>
+  </aside>`;
+
+  const menu = `<div class="menu" style="left:198px;top:196px;width:206px">
+    ${[["open", "Open", "Enter", 1], ["rename", "Rename", "F2"], ["copy", "Copy title", ""], ["folder", "Reveal folder", ""], null, ["stop", "End session", "Ctrl W"], ["trash", "Remove from list", "Del", 0, 1]].map(m => m ? `<div class="it${m[3] ? " sel" : ""}${m[4] ? " danger" : ""}">${svg(m[0])}<span>${m[1]}</span><kbd>${m[2]}</kbd></div>` : '<hr class="sep" style="margin:4px 10px">').join("")}</div>`;
+  return `<div class="app ${v}">${side}${main}${panel}${menu}</div>`;
+}
+
+const V = [["mono", "Raster · mono"], ["amber", "Raster · amber"]];
+const want = location.hash.slice(1);
+document.getElementById("out").innerHTML = V.filter(([v]) => !want || want === v).map(([v, n]) => `<section class="shot"><h2>${n}</h2>${app(v)}</section>`).join("");
+document.querySelectorAll("canvas[data-b]").forEach(c => { c.width = c.height = 16; const s = sprite(c.dataset.b, c.dataset.a); c.getContext("2d").drawImage(s, 0, 0); });
+// animate the braille spinners
+let f = 0;
+const spins = [...document.querySelectorAll("[data-spin]")];
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) setInterval(() => { f++; spins.forEach((el, i) => { if (el.closest(".st") && el.parentElement.textContent.includes("?")) return; el.outerHTML; const ch = SPIN[(f + i) % 8]; const b = ch.codePointAt(0) - 0x2800; el.firstChild.innerHTML = DOTS.map(([x, y], k) => b & (1 << k) ? `<rect x="${1 + x * 3}" y="${1 + y * 3}" width="2" height="2"/>` : "").join(""); }); }, 90);
+</script>
