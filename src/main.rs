@@ -27,6 +27,9 @@ pub const MODELS: &[(&str, &str)] = &[
 /// Versão completa: pacote, commit e data do build.
 pub const VERSION: &str = concat!("raster ", env!("CARGO_PKG_VERSION"), " (", env!("RASTER_REV"), ", ", env!("RASTER_BUILD_DATE"), ")");
 
+/// Máximo de anexos por mensagem.
+pub const MAX_ATTACHMENTS: usize = 10;
+
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -92,6 +95,9 @@ pub struct State {
     /// Início da decodificação da tela (troca, abertura ou nova conversa).
     pub decode_t0: f64,
     pub attachments: Vec<PathBuf>,
+    /// Miniaturas dos anexos de imagem, decodificadas fora da thread da UI.
+    pub previews: std::collections::HashMap<PathBuf, rune::Image>,
+    pub images: Option<rune::ImageCache>,
     pub prefs: store::Prefs,
     /// Quadros por segundo do campo de fundo (0 = parado), lido pela thread do dither.
     pub fps: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -135,6 +141,8 @@ impl State {
             rename: TextEdit::new(""),
             decode_t0: 0.0,
             attachments: Vec::new(),
+            previews: Default::default(),
+            images: None,
             prefs: store::Prefs::load(),
             fps: Default::default(),
             aurora: Pixels::new(),
@@ -201,6 +209,28 @@ impl State {
         let chat = self.view == View::Chat && self.current.is_some();
         let f = if self.prefs.dither && !chat { self.prefs.fps } else { 0 };
         self.fps.store(f, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn attachments_from(&mut self, paths: &[PathBuf]) {
+        self.attach(paths.iter().cloned());
+    }
+
+    /// Anexa arquivos até o limite; imagens ganham miniatura.
+    pub fn attach(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for p in paths {
+            if self.attachments.len() >= MAX_ATTACHMENTS {
+                break;
+            }
+            if self.attachments.contains(&p) {
+                continue;
+            }
+            if session::image_mime(&p).is_some()
+                && let (Some(c), Ok(bytes)) = (&self.images, std::fs::read(&p))
+            {
+                self.previews.insert(p.clone(), c.load(bytes));
+            }
+            self.attachments.push(p);
+        }
     }
 
     pub fn start_rename(&mut self, id: u64) {
@@ -279,6 +309,7 @@ impl State {
             return;
         }
         let mut images = Vec::new();
+        self.previews.clear();
         for a in self.attachments.drain(..) {
             match (session::image_mime(&a), std::fs::read(&a)) {
                 (Some(mime), Ok(bytes)) => {
@@ -396,6 +427,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
 fn setup(s: &mut State, waker: rune::Waker) {
     ui::transcript::tick_clock(s.time.clone(), waker.clone());
     swarm::watch(s.swarm.clone(), waker.clone());
+    s.images = Some(rune::ImageCache::new(waker.clone()));
     s.waker = Some(waker);
     s.sync_prefs();
     ui::dither::animate(s.bg.clone(), 1280, 800, s.fps.clone());
@@ -478,7 +510,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode), ("demo-agent-model", store::demo_agent_model)],
+        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode), ("demo-agent-model", store::demo_agent_model), ("demo-attach", store::demo_attach)],
         min_size: Some((820.0, 520.0)),
         ..AppSpec::new("Raster", (1280.0, 800.0), State::new, view)
     });

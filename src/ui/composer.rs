@@ -3,7 +3,7 @@
 
 use rune::{Align, El, Side, TextEdit, Tx, auto_grow, col, el, row, text, text_input};
 
-use super::{Dither, LABEL, SMALL, dither, friendly_model, icon, pal};
+use super::{Dither, LABEL, SMALL, dither, friendly_model, icon, icon_sized, pal};
 use crate::agents::{ALL, Agent};
 use crate::session::{Item, Status};
 use crate::{EFFORTS, Popover, State};
@@ -38,14 +38,14 @@ pub fn view(s: &State) -> El {
         .on_edit(|s: &mut State| &mut s.composer)
         .on_input_paste(|s: &mut State, c: &rune::ClipboardContent, _tx: &mut Tx| {
             if !c.files().is_empty() {
-                s.attachments.extend_from_slice(c.files());
+                s.attachments_from(c.files());
                 return true;
             }
             let Some(img) = c.image() else { return false };
             let dir = crate::omp::state_dir().join("pastes");
             let path = dir.join(format!("paste-{}.png", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
             if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&path, img.png()).is_ok() {
-                s.attachments.push(path);
+                s.attach([path]);
             }
             true
         })
@@ -90,30 +90,45 @@ pub fn view(s: &State) -> El {
 
     let mut box_ = col().key("composer-box").w_full().px(12.0).pt(10.0).pb(8.0).gap(6.0);
     if !s.attachments.is_empty() {
-        let mut chips = row().key("chips").gap(6.0).flex_wrap();
+        let mut chips = row().key("chips").w_full().gap(8.0).flex_wrap().items_end();
         for (i, a) in s.attachments.iter().enumerate() {
             let name = a.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-            chips = chips.child(row().key(format!("att-{i}")).px(6.0).py(2.0).gap(6.0).center_y().border(1.0, p.dim)
-                .child(icon("file", p.dim)).child(text(name).font(SMALL).color(p.text))
-                .child(icon("close", p.dim).on_press(move |s: &mut State| {
+            let close = el().key(format!("att-x-{i}")).size(16.0, 16.0).center().fill(p.bg).border(1.0, p.dim).hover(p.field)
+                .child(icon_sized("close", 12.0, p.text))
+                .on_press(move |s: &mut State| {
                     if i < s.attachments.len() {
-                        s.attachments.remove(i);
+                        let a = s.attachments.remove(i);
+                        s.previews.remove(&a);
                     }
-                })));
+                });
+            let chip = match s.previews.get(a) {
+                Some(img) => col().key(format!("att-{i}")).w(64.0).gap(2.0)
+                    .child(el().size(64.0, 64.0).border(1.0, p.dim).pixels_fit(img.pixels(), rune::SurfaceFit::Fill)
+                        .child(close.absolute(47.0, 1.0)))
+                    .child(text(name).font(SMALL).color(p.dim).truncate().w(64.0)),
+                None => row().key(format!("att-{i}")).h(26.0).px(6.0).gap(6.0).center_y().border(1.0, p.dim)
+                    .child(icon("file", p.dim)).child(text(name).font(SMALL).color(p.text).max_w(180.0).truncate()).child(close),
+            };
+            chips = chips.child(chip);
         }
+        let full = s.attachments.len() >= crate::MAX_ATTACHMENTS;
+        chips = chips.child(text(format!("{}/{}", s.attachments.len(), crate::MAX_ATTACHMENTS)).font(SMALL).color(if full { p.text } else { p.faint }));
         box_ = box_.child(chips);
     }
     let box_ = super::hard(box_.fill(p.bg).border(2.0, p.text), 6.0, p.text)
         .child(auto_grow(field, 1, 8))
         .child(bar);
     col().key("composer-wrap").w_full().child(box_)
-        .on_drop_files(|s: &mut State, files: &[std::path::PathBuf], _tx: &mut Tx| s.attachments.extend_from_slice(files))
+        .on_drop_files(|s: &mut State, files: &[std::path::PathBuf], _tx: &mut Tx| s.attachments_from(files))
 }
 
 /// Partes do contexto (rótulo, padrão, tokens). Mensagens e saída de ferramentas são estimadas pelo
 /// texto (4 caracteres por token); o resto do usado é system prompt + definições de ferramentas.
 fn context_parts(s: &State) -> (Vec<(&'static str, Dither, u64)>, u64) {
-    let Some(x) = s.session() else { return (vec![("free", Dither::Sparse, 200_000)], 200_000) };
+    let Some(x) = s.session() else {
+        let w = s.prefs.ctx_for(&s.cur_model());
+        return (vec![("free", Dither::Sparse, w)], w);
+    };
     let (mut msgs, mut tools) = (0u64, 0u64);
     for it in &x.items {
         match it {
@@ -126,7 +141,7 @@ fn context_parts(s: &State) -> (Vec<(&'static str, Dither, u64)>, u64) {
     let used = x.ctx_tokens;
     let (msgs, tools) = (msgs.min(used), tools.min(used.saturating_sub(msgs.min(used))));
     let base = used - msgs - tools;
-    let win = x.ctx_window.max(used).max(1);
+    let win = s.prefs.ctx_for(&x.model).max(used).max(1);
     (vec![
         ("system + tools", Dither::Solid, base),
         ("messages", Dither::Checker, msgs),
@@ -138,7 +153,7 @@ fn context_parts(s: &State) -> (Vec<(&'static str, Dither, u64)>, u64) {
 /// Medidor vertical do composer: segmentos, cheio de baixo para cima.
 fn context_bar(s: &State) -> El {
     let p = pal();
-    let (used, win) = s.session().map(|x| (x.ctx_tokens, x.ctx_window)).unwrap_or((0, 200_000));
+    let (used, win) = s.session().map(|x| (x.ctx_tokens, s.prefs.ctx_for(&x.model))).unwrap_or((0, s.prefs.ctx_for(&s.cur_model())));
     let frac = (used as f32 / win.max(1) as f32).clamp(0.0, 1.0);
     let segs = 6;
     let lit = (frac * segs as f32).ceil() as usize;
@@ -324,7 +339,7 @@ fn plus_card(_s: &State) -> El {
                     let opts = rune::FileDialogOptions { title: "Attach file".into(), directory: Some(s.cwd.clone()), ..Default::default() };
                     tx.open_file(opts, |s: &mut State, r, _| {
                         if let Ok(Some(path)) = r {
-                            s.attachments.push(path);
+                            s.attach([path]);
                         }
                     });
                 }),

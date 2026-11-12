@@ -36,6 +36,8 @@ pub struct Prefs {
     pub dither: bool,
     pub fps: u32,
     pub font: u32,
+    /// Limite de contexto escolhido pelo usuário por modelo (provedor/id → tokens).
+    pub ctx_limits: std::collections::BTreeMap<String, u64>,
     /// Modelo e effort padrão por agente (nome → (modelo, effort)); vazio usa o padrão do agente.
     pub agents: std::collections::BTreeMap<String, (String, String)>,
 }
@@ -46,12 +48,18 @@ impl Default for Prefs {
             sub_invoke: true, max_parallel: 4, vault: true, vault_nudge: true, vault_first: true,
             dcp_soft: 50_000, dcp_hard: 100_000, dcp_every: 5, dcp_dedup: true,
             rtk: true, ask_destructive: true, ask_timeout: 120,
-            dither: true, fps: 8, font: 13, agents: Default::default(),
+            dither: true, fps: 8, font: 13, agents: Default::default(), ctx_limits: Default::default(),
         }
     }
 }
 
 impl Prefs {
+    /// Contexto efetivo do modelo: o limite do usuário, nunca acima do teto do provedor (200k sem dado).
+    pub fn ctx_for(&self, model: &str) -> u64 {
+        let max = crate::ui::ctx_max(model).unwrap_or(200_000);
+        self.ctx_limits.get(model).copied().map_or(max, |l| l.min(max))
+    }
+
     pub fn agent_defaults(&self, a: Agent) -> (String, String) {
         let (m, e) = self.agents.get(a.name()).cloned().unwrap_or_default();
         (if m.is_empty() { a.default_model().into() } else { m }, if e.is_empty() { "medium".into() } else { e })
@@ -194,4 +202,10 @@ pub fn demo_agent_model(s: &mut State) {
 pub fn demo_settings(s: &mut State) {
     demo(s);
     s.view = crate::View::Configs;
+    crate::ui::reload_catalog();
+}
+
+pub fn demo_attach(s: &mut State) {
+    demo(s);
+    s.attachments = vec!["/tmp/notes.md".into(), "/tmp/build.log".into()];
 }

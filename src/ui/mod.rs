@@ -120,23 +120,28 @@ pub fn button(key: impl Into<String>, label: impl Into<String>) -> El {
         .child(text(label.into()).font(LABEL).color(p.text))
 }
 
-static CATALOG: std::sync::RwLock<Vec<(String, String)>> = std::sync::RwLock::new(Vec::new());
+static CATALOG: std::sync::RwLock<Vec<(String, String, u64)>> = std::sync::RwLock::new(Vec::new());
 
 /// Catálogo de modelos com credencial (provedor/id, nome).
 pub fn catalog() -> Vec<(String, String)> {
-    CATALOG.read().map(|c| c.clone()).unwrap_or_default()
+    CATALOG.read().map(|c| c.iter().map(|m| (m.0.clone(), m.1.clone())).collect()).unwrap_or_default()
+}
+
+/// Teto de contexto que o provedor reporta para o modelo.
+pub fn ctx_max(id: &str) -> Option<u64> {
+    CATALOG.read().ok()?.iter().find(|m| m.0 == id).map(|m| m.2).filter(|n| *n > 0)
 }
 
 pub fn reload_catalog() {
     let path = crate::omp::state_dir().join("ompdsh/models.json");
     let Ok(raw) = std::fs::read_to_string(path) else { return };
     let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) else { return };
-    let list: Vec<(String, String)> = v.iter().filter_map(|m| {
+    let list: Vec<(String, String, u64)> = v.iter().filter_map(|m| {
         let (p, id) = (m["provider"].as_str()?, m["id"].as_str()?);
         if p == "openrouter" {
             return None;
         }
-        Some((format!("{p}/{id}"), m["name"].as_str().unwrap_or(id).to_string()))
+        Some((format!("{p}/{id}"), m["name"].as_str().unwrap_or(id).to_string(), m["contextWindow"].as_u64().unwrap_or(0)))
     }).collect();
     if let Ok(mut c) = CATALOG.write() {
         *c = list;

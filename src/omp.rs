@@ -84,6 +84,8 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
 
     let prefs = crate::store::Prefs::load();
     let flag = |b: bool| if b { "1" } else { "0" };
+    crate::ui::reload_catalog();
+    let ctx = prefs.ctx_for(s.model);
     let mut cmd = Command::new(&omp);
     cmd.args(["--mode", "rpc", "--no-title", "--model", s.model, "--thinking", s.thinking, "--auto-approve"])
         .args(["--no-tools", "--no-context-files", "--no-skills", "--no-rules"])
@@ -99,8 +101,9 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
         .env("RASTER_OMP", &omp)
         .env("RASTER_KEEPALIVE", "1")
         .env("RASTER_VAULT_NUDGE", flag(prefs.vault_nudge))
-        .env("RASTER_DCP_MIN", prefs.dcp_soft.to_string())
-        .env("RASTER_DCP_MAX", prefs.dcp_hard.to_string())
+        .env("RASTER_DCP_MIN", (prefs.dcp_soft as u64).min(ctx / 2).to_string())
+        .env("RASTER_DCP_MAX", (prefs.dcp_hard as u64).min(ctx * 85 / 100).to_string())
+        .env("RASTER_CTX_LIMIT", ctx.to_string())
         .env("RASTER_DCP_FREQ", prefs.dcp_every.to_string())
         .env("RASTER_DCP_DEDUP", flag(prefs.dcp_dedup))
         .env("RASTER_VAULT", flag(prefs.vault))

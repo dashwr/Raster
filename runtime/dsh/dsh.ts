@@ -688,7 +688,7 @@ export default function ompDsh(pi: ExtensionAPI) {
 	// Raster: catálogo compacto dos modelos com credencial (o get_available_models do RPC passa do limite)
 	const writeModels = (ctx: any) => {
 		try {
-			const list = (ctx?.modelRegistry?.getAvailable?.() ?? []).map((m: any) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
+			const list = (ctx?.modelRegistry?.getAvailable?.() ?? []).map((m: any) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, contextWindow: m.contextWindow ?? 0 }));
 			if (list.length) fs.writeFileSync(path.join(ROOT, "models.json"), JSON.stringify(list));
 		} catch {}
 	};

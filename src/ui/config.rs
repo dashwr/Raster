@@ -43,6 +43,59 @@ fn stepper(key: &'static str, value: String, dec: fn(&mut Prefs), inc: fn(&mut P
         .child(b(format!("{key}+"), "plus", inc))
 }
 
+fn tok(n: u64) -> String {
+    if n >= 1_000_000 && n.is_multiple_of(1_000_000) { format!("{}M", n / 1_000_000) } else { format!("{}k", n / 1000) }
+}
+
+/// Passo do limite: 25k abaixo de 200k, 100k acima.
+fn step(n: u64, up: bool) -> u64 {
+    let d = if n < 200_000 || (!up && n == 200_000) { 25_000 } else { 100_000 };
+    if up { n + d } else { n.saturating_sub(d) }
+}
+
+/// Contexto por modelo: teto do provedor e limite do usuário (o efetivo é o menor dos dois).
+fn models_frame(s: &State) -> El {
+    let p = pal();
+    let mut c = col().gap(2.0).child(row().gap(10.0).py(2.0)
+        .child(text("MODEL").font(SMALL).color(p.faint).grow(1.0))
+        .child(text("PROVIDER MAX").font(SMALL).color(p.faint).w(100.0))
+        .child(text("LIMIT").font(SMALL).color(p.faint).w(150.0)));
+    let models = s.models();
+    if models.is_empty() {
+        c = c.child(text("No connected provider").font(SMALL).color(p.faint));
+    }
+    for (id, name) in models {
+        let max = super::ctx_max(&id);
+        let eff = s.prefs.ctx_for(&id);
+        let custom = s.prefs.ctx_limits.contains_key(&id);
+        let (a, b, r) = (id.clone(), id.clone(), id.clone());
+        let btn = |k: String, ic: &'static str, f: Box<dyn Fn(&mut State)>| el().key(k).size(22.0, 22.0).center().hover(p.field)
+            .child(if ic == "minus" { el().size(10.0, 2.0).fill(p.text) } else { icon(ic, p.text) })
+            .on_press(move |s: &mut State| f(s));
+        let lim = row().key(format!("lim-{id}")).w(150.0).gap(6.0).center_y()
+            .child(row().border(1.0, p.dim).center_y()
+                .child(btn(format!("lim-{id}-"), "minus", Box::new(move |s: &mut State| {
+                    let n = step(s.prefs.ctx_for(&a), false).max(25_000);
+                    set(s, |p| { p.ctx_limits.insert(a.clone(), n); });
+                })))
+                .child(el().w(52.0).center().child(text(tok(eff)).font(SMALL).color(if custom { p.text } else { p.dim })))
+                .child(btn(format!("lim-{id}+"), "plus", Box::new(move |s: &mut State| {
+                    let max = super::ctx_max(&b).unwrap_or(200_000);
+                    let n = step(s.prefs.ctx_for(&b), true).min(max);
+                    set(s, |p| { p.ctx_limits.insert(b.clone(), n); });
+                }))))
+            .child(if custom {
+                el().key(format!("lim-{id}-r")).hover(p.field).child(icon("refresh", p.dim))
+                    .on_press(move |s: &mut State| set(s, |p| { p.ctx_limits.remove(&r); }))
+            } else { el() });
+        c = c.child(row().key(format!("mdl-{id}")).h(28.0).gap(10.0).center_y()
+            .child(text(name).font(LABEL).color(p.text).grow(1.0).min_w(0.0).truncate())
+            .child(text(max.map(tok).unwrap_or_else(|| "?".into())).font(SMALL).color(p.dim).w(100.0))
+            .child(lim));
+    }
+    c.child(text("Effective context is your limit, capped by the provider's max. DCP soft and hard limits shrink to fit it.").font(SMALL).color(p.faint).wrap())
+}
+
 /// Botão de dropdown: abre um popover ancorado abaixo dele.
 fn drop(key: String, label: String, pop: crate::Popover) -> El {
     let p = pal();
@@ -117,6 +170,8 @@ pub fn view(s: &State) -> El {
         .child(line("Max parallel subagents", "Per session", stepper("st-par", pr.max_parallel.to_string(),
             |p| p.max_parallel = p.max_parallel.saturating_sub(1).max(1), |p| p.max_parallel = (p.max_parallel + 1).min(16))));
     c = c.child(frame("f-ag", "agents", ag));
+
+    c = c.child(frame("f-models", "models · context", models_frame(s)));
 
     c = c.child(frame("f-mem", "memory", col().gap(2.0)
         .child(line("Vault", "basic-memory MCP over ~/vault", switch("sw-vault", pr.vault, |p| p.vault = !p.vault)))
