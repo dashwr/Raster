@@ -21,7 +21,7 @@ fn current_effort(s: &State) -> String {
 }
 
 fn provider_icon(model: &str) -> &'static str {
-    if model.starts_with("anthropic/") { "burst" } else if model.starts_with("openai") { "knot" } else { "key" }
+    if model.starts_with("anthropic/") { "burst" } else if model.starts_with("openai") { "knot" } else if model.starts_with("google") { "bolt" } else { "key" }
 }
 
 fn toggle(s: &mut State, p: Popover) {
@@ -165,15 +165,16 @@ fn model_card(s: &State) -> El {
     }
     for (id, name) in models {
         let on = id == cur;
+        let id2 = id.clone();
         c = c.child(
             row().key(format!("m-{id}")).w_full().px(12.0).h(28.0).gap(10.0).center_y().hover(p.field)
                 .fill(if on { p.field } else { p.bg })
-                .child(icon(provider_icon(id), p.text))
+                .child(icon(provider_icon(&id), p.text))
                 .child(text(name).font(LABEL).color(if on { p.text } else { p.dim }).grow(1.0))
                 .child(if on { icon("check", p.text) } else { el().size(16.0, 16.0) })
                 .on_press(move |s: &mut State| {
                     if let Some(x) = s.session_mut() {
-                        x.set_model(id);
+                        x.set_model(&id2);
                         crate::store::save(s);
                     }
                 }),

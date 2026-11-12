@@ -30,7 +30,8 @@ pub fn view(s: &State) -> El {
     let p = pal();
     let brand = row().key("brand").px(14.0).pt(16.0).pb(10.0).gap(8.0).center_y()
         .child(text("RASTER").font(BRAND).color(p.text))
-        .child(text(concat!("v", env!("CARGO_PKG_VERSION"))).font(SMALL).color(p.dim));
+        .child(text(concat!("v", env!("CARGO_PKG_VERSION"))).font(SMALL).color(p.dim))
+        .help(crate::VERSION);
 
     let new = row().key("new").mx(12.0).px(8.0).h(28.0).gap(8.0).center_y().fill(p.text).border(1.0, p.text)
         .child(icon("plus", p.bg))

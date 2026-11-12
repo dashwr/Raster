@@ -1,0 +1,25 @@
+# Pacote pacman do Solwired Raster a partir de um build já feito (tools/package.sh).
+# O binário vem de target/release/raster; o runtime (omp-dsh + node_modules) vai junto.
+pkgname=raster
+pkgver=${RASTER_PKGVER:-0.1.0}
+pkgrel=1
+pkgdesc="Solwired Raster: desktop app for the omp-dsh agent runtime"
+arch=('x86_64')
+url="https://github.com/dashwr/Raster"
+license=('MIT')
+depends=('bun' 'gcc-libs' 'glibc' 'vulkan-icd-loader' 'xdg-utils' 'xdg-desktop-portal')
+optdepends=('rtk: condensed command output' 'basic-memory: vault MCP server')
+options=('!strip' '!debug')
+source=()
+
+package() {
+  local root="$startdir/.."
+  install -Dm755 "$root/target/release/raster" "$pkgdir/usr/lib/raster/raster"
+  install -d "$pkgdir/usr/lib/raster/runtime" "$pkgdir/usr/bin"
+  cp -a "$root/runtime/dsh" "$root/runtime/node_modules" "$root/runtime/package.json" "$pkgdir/usr/lib/raster/runtime/"
+  cp -a "$root/agents" "$pkgdir/usr/lib/raster/agents"
+  ln -s /usr/lib/raster/raster "$pkgdir/usr/bin/raster"
+  install -Dm644 "$startdir/raster.desktop" "$pkgdir/usr/share/applications/raster.desktop"
+  install -Dm644 "$startdir/raster.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/raster.png"
+  install -Dm644 "$root/LICENSE" "$pkgdir/usr/share/licenses/raster/LICENSE"
+}

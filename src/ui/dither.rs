@@ -64,6 +64,61 @@ pub fn animate(px: Pixels, w: u32, h: u32, fps: std::sync::Arc<std::sync::atomic
     });
 }
 
+/// Aurora: cortinas que ondulam na horizontal, com raios verticais, em dither Bayer cinza sobre
+/// transparente. Fraca de propósito: fica atrás do texto.
+pub fn aurora(w: u32, h: u32, cell: u32, t: f32, out: &mut Vec<u8>) {
+    out.clear();
+    out.resize((w * h * 4) as usize, 0);
+    let (gw, gh) = (w.div_ceil(cell), h.div_ceil(cell));
+    for gx in 0..gw {
+        let u = gx as f32 / gw as f32;
+        let curtain = |phase: f32, center: f32, amp: f32| {
+            let c = center + amp * (u * 5.0 + t * 0.35 + phase).sin() + amp * 0.5 * (u * 11.0 - t * 0.5 + phase).sin();
+            let rays = 0.55 + 0.45 * (u * 47.0 + t * 0.9 + phase * 3.0).sin() * (u * 23.0 - t * 0.4).cos();
+            (c, rays)
+        };
+        let bands = [curtain(0.0, 0.30, 0.08), curtain(2.1, 0.48, 0.06), curtain(4.2, 0.20, 0.05)];
+        for gy in 0..gh {
+            let v = gy as f32 / gh as f32;
+            let mut l = 0.0f32;
+            for (i, (c, rays)) in bands.iter().enumerate() {
+                // cortina: borda de baixo nítida, cauda longa para cima
+                let d = v - c;
+                let k = if d > 0.0 { (-(d * d) / 0.002).exp() } else { (d / 0.18).exp() };
+                l += k * rays * [0.55, 0.4, 0.3][i];
+            }
+            let l = (l * (0.85 + 0.15 * (t * 0.7).sin())).clamp(0.0, 0.9);
+            let th = (BAYER[(gy % 8) as usize][(gx % 8) as usize] as f32 + 0.5) / 64.0;
+            if l <= th {
+                continue;
+            }
+            for y in gy * cell..((gy + 1) * cell).min(h) {
+                for x in gx * cell..((gx + 1) * cell).min(w) {
+                    let i = ((y * w + x) * 4) as usize;
+                    out[i..i + 4].copy_from_slice(&[150, 150, 150, 255]);
+                }
+            }
+        }
+    }
+}
+
+/// Anima a aurora a ~15 fps enquanto `on` estiver ligado; parada não gasta CPU.
+pub fn animate_aurora(px: Pixels, w: u32, h: u32, on: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        let mut buf = Vec::new();
+        loop {
+            if on.load(std::sync::atomic::Ordering::Relaxed) {
+                aurora(w, h, 3, start.elapsed().as_secs_f32(), &mut buf);
+                px.set(w, h, buf.clone());
+                std::thread::sleep(std::time::Duration::from_millis(66));
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -73,5 +128,14 @@ mod tests {
         assert_eq!(buf.len(), 30 * 20 * 4);
         assert!(buf.chunks(4).all(|p| (p[0] == 236 || p[0] == 10) && p[3] == 255));
         assert!(buf.chunks(4).any(|p| p[0] == 236) && buf.chunks(4).any(|p| p[0] == 10));
+    }
+
+    #[test]
+    fn aurora_is_sparse_gray_on_transparent() {
+        let mut buf = Vec::new();
+        super::aurora(200, 120, 4, 3.0, &mut buf);
+        let lit = buf.chunks(4).filter(|p| p[3] == 255).count();
+        assert!(lit > 0 && lit < 200 * 120 / 2);
+        assert!(buf.chunks(4).all(|p| p[3] == 0 || p[0] == 150));
     }
 }

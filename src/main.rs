@@ -24,6 +24,9 @@ pub const MODELS: &[(&str, &str)] = &[
     ("openai-codex/gpt-6-luna", "GPT-6 Luna"),
 ];
 
+/// Versão completa: pacote, commit e data do build.
+pub const VERSION: &str = concat!("raster ", env!("CARGO_PKG_VERSION"), " (", env!("RASTER_REV"), ", ", env!("RASTER_BUILD_DATE"), ")");
+
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -89,6 +92,9 @@ pub struct State {
     pub prefs: store::Prefs,
     /// Quadros por segundo do campo de fundo (0 = parado), lido pela thread do dither.
     pub fps: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Aurora do fundo do chat: quadro atual e se a thread deve animar (sessão atual pensando).
+    pub aurora: Pixels,
+    pub aurora_on: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl State {
@@ -124,6 +130,8 @@ impl State {
             attachments: Vec::new(),
             prefs: store::Prefs::load(),
             fps: Default::default(),
+            aurora: Pixels::new(),
+            aurora_on: Default::default(),
         };
         store::load(&mut s);
         s.composer.focused = true;
@@ -202,13 +210,20 @@ impl State {
         }
     }
 
-    /// Modelos de provedores com conexão ativa: Claude pelo login local, o resto pelo omp.
-    pub fn models(&self) -> Vec<(&'static str, &'static str)> {
-        let providers = self.util.as_ref().map(|u| u.providers.clone()).unwrap_or_default();
-        MODELS.iter().copied().filter(|(id, _)| {
+    /// Modelos de provedores com conexão ativa: a lista curada de Claude e Codex, mais os modelos
+    /// que o omp valida para os outros provedores logados (Gemini e afins).
+    pub fn models(&self) -> Vec<(String, String)> {
+        let (providers, dynamic) = self.util.as_ref().map(|u| (u.providers.clone(), u.models.clone())).unwrap_or_default();
+        let on = |prov: &str| (prov == "anthropic" && self.logged_in) || providers.iter().any(|p| p.0 == prov && p.2);
+        let mut out: Vec<(String, String)> = MODELS.iter().filter(|(id, _)| on(id.split('/').next().unwrap_or("")))
+            .map(|(a, b)| (a.to_string(), b.to_string())).collect();
+        for (id, name) in dynamic {
             let prov = id.split('/').next().unwrap_or("");
-            (prov == "anthropic" && self.logged_in) || providers.iter().any(|p| p.0 == prov && p.2)
-        }).collect()
+            if prov != "anthropic" && prov != "openai-codex" && on(prov) && !out.iter().any(|m| m.0 == id) {
+                out.push((id, name));
+            }
+        }
+        out
     }
 
     pub fn new_session(&mut self) {
@@ -261,6 +276,8 @@ fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
             }
         }
     }
+    let thinking = s.session().is_some_and(|x| x.status == Status::Working);
+    s.aurora_on.store(thinking, std::sync::atomic::Ordering::Relaxed);
     let busy = s.sessions.iter().any(|x| matches!(x.status, Status::Working | Status::Asking));
     if busy {
         if clock - s.last_spin >= 0.08 {
@@ -330,6 +347,7 @@ fn setup(s: &mut State, waker: rune::Waker) {
     s.waker = Some(waker);
     s.sync_prefs();
     ui::dither::animate(s.bg.clone(), 640, 400, s.fps.clone());
+    ui::dither::animate_aurora(s.aurora.clone(), 960, 720, s.aurora_on.clone());
     s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
 
@@ -391,6 +409,10 @@ fn probe(msg: String) -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", VERSION);
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--probe") {
         probe(args.get(i + 1).cloned().unwrap_or_default());
     }
@@ -404,7 +426,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings)],
+        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode)],
         min_size: Some((820.0, 520.0)),
         ..AppSpec::new("Raster", (1280.0, 800.0), State::new, view)
     });

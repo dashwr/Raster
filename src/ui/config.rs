@@ -69,6 +69,9 @@ pub fn view(s: &State) -> El {
         .child(line("ChatGPT / Codex", "OAuth sign in through omp, opens the browser", row().gap(8.0).center_y().child(status(on("openai-codex")))
             .child(button("cfg-codex", if on("openai-codex") { "Sign in again" } else { "Sign in" })
                 .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openai-codex"}))))))
+        .child(line("Gemini", "Google account OAuth (Gemini CLI flow), opens the browser", row().gap(8.0).center_y().child(status(on("google-gemini-cli")))
+            .child(button("cfg-gemini", if on("google-gemini-cli") { "Sign in again" } else { "Sign in" })
+                .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "google-gemini-cli"}))))))
         .child(line("OpenRouter", "Sign in through omp", row().gap(8.0).center_y().child(status(on("openrouter")))
             .child(button("cfg-or", "Sign in").on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openrouter"}))))))
         .child(row().child(button("cfg-refresh", "Refresh status").on_press(|s: &mut State| s.util_send(json!({"type": "get_login_providers"})))));
@@ -101,7 +104,7 @@ pub fn view(s: &State) -> El {
                 if models.is_empty() { return; }
                 let (cur, _) = s.prefs.agent_defaults(a);
                 let i = models.iter().position(|m| m.0 == cur).map(|i| (i + 1) % models.len()).unwrap_or(0);
-                let next = models[i].0.to_string();
+                let next = models[i].0.clone();
                 set(s, |p| p.agents.entry(name.into()).or_default().0 = next);
             })))
             .child(el().w(80.0).child(button(format!("ag-e-{name}"), effort.clone()).on_press(move |s: &mut State| {

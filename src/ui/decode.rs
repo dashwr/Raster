@@ -1,8 +1,8 @@
 //! Efeito de decodificação ASCII: letras e números passam por caracteres aleatórios até assentar;
 //! espaço e pontuação ficam no lugar e servem de esqueleto (markdown continua válido).
 
-/// Duração da decodificação da tela inteira, em segundos.
-pub const SPAN: f64 = 0.6;
+/// Duração máxima da decodificação da tela inteira, em segundos (onda + assentamento).
+pub const SPAN: f64 = 0.9;
 /// Caracteres finais de um texto em streaming que ainda estão decodificando.
 const TAIL: usize = 24;
 const NOISE: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghkmnpqrstuvwxyz0123456789#$%&*+=?@<>/\\";
@@ -33,6 +33,30 @@ pub fn scramble_from(s: &str, settled: usize, frame: u64) -> String {
     s.chars().enumerate().map(|(i, c)| if i >= settled && c.is_alphanumeric() { noise(i, frame) } else { c }).collect()
 }
 
+fn jitter(i: usize) -> f64 {
+    let x = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    ((x >> 40) % 1000) as f64 / 1000.0
+}
+
+/// Onda única pela tela, como o ascii-reveal: cada caractere assenta num instante que cresce com a
+/// linha e a coluna (diagonal) mais o atraso `base` do bloco e um jitter; antes disso cicla glifos.
+pub fn reveal(s: &str, elapsed: f64, base: f64, frame: u64) -> String {
+    if elapsed >= SPAN {
+        return s.to_string();
+    }
+    let (mut line, mut col) = (0usize, 0usize);
+    s.chars().enumerate().map(|(i, c)| {
+        let t = base + (line as f64 * 0.025 + col as f64 * 0.004).min(0.45) + jitter(i) * 0.12;
+        if c == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+        if elapsed < t && c.is_alphanumeric() { noise(i, frame) } else { c }
+    }).collect()
+}
+
 /// Progresso `k` de 0 a 1: a frente de decodificação varre o texto da esquerda para a direita.
 pub fn sweep(s: &str, k: f32, frame: u64) -> String {
     if k >= 1.0 {
@@ -44,11 +68,6 @@ pub fn sweep(s: &str, k: f32, frame: u64) -> String {
 
 pub fn frame(clock: f64) -> u64 {
     (clock * 30.0) as u64
-}
-
-/// Progresso da decodificação da tela desde `t0`.
-pub fn screen(clock: f64, t0: f64) -> f32 {
-    ((clock - t0) / SPAN) as f32
 }
 
 /// Fim de um texto em streaming ainda decodificando.
@@ -80,5 +99,7 @@ mod tests {
         }
         assert_eq!(sweep(s, 1.0, 7), s);
         assert_eq!(scramble_from("abc", 3, 1), "abc");
+        assert_eq!(reveal(s, SPAN, 0.0, 3), s);
+        assert_ne!(reveal("abcdefgh", 0.0, 0.0, 3), "abcdefgh");
     }
 }

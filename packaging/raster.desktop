@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Raster
+GenericName=Agent desktop
+Comment=Solwired Raster: desktop app for the omp-dsh agent runtime
+Exec=raster %f
+Icon=raster
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=raster

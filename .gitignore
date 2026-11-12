@@ -1,3 +1,4 @@
 /target
 /runtime/node_modules
 /.claude/skills/awwwards/
+/dist

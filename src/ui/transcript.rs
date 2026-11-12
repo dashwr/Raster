@@ -30,11 +30,14 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
     let p = pal();
     let sid = sess.id;
     let mut list = col().key(format!("tx-{sid}")).w_full().px(22.0).py(18.0).gap(14.0);
-    let k = super::decode::screen(s.clock, s.decode_t0);
+    let el_t = s.clock - s.decode_t0;
     let fr = super::decode::frame(s.clock);
-    let dec = |t: &str| super::decode::sweep(t, k, fr);
+    let dec_at = |t: &str, base: f64| super::decode::reveal(t, el_t, base, fr);
+    let dec = |t: &str| dec_at(t, 0.0);
     let last_ask = sess.items.iter().rposition(|i| matches!(i, Item::Ask { answer: None, .. }));
     for (idx, it) in sess.items.iter().enumerate() {
+        let base = (idx as f64 * 0.04).min(0.3);
+        let dec = |t: &str| dec_at(t, base);
         let node = match it {
             Item::User(t) => row().w_full().justify_end().child(
                 super::hard(el().max_w(560.0).px(12.0).py(8.0).fill(p.text), 4.0, p.dim)
@@ -73,7 +76,10 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
     }
     col().key("transcript").grow(1.0).min_h(0.0).w_full().gap(16.0)
         .child(header(sess, &dec))
-        .child(super::float(col().key(format!("scroll-{sid}")).grow(1.0).min_h(0.0).w_full()).child(list).scroll(rune::ScrollSpec { stick_bottom: true }))
+        .child(super::float(el().key("tx-frame").grow(1.0).min_h(0.0).w_full())
+            .child(el().key("aurora").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.aurora, rune::SurfaceFit::Fill)
+                .opacity(if sess.status == Status::Working { 0.35 } else { 0.0 }).opacity_motion(rune::Spring::new(0.8, 0.0)))
+            .child(col().key(format!("scroll-{sid}")).w_full().h_full().child(list).scroll(rune::ScrollSpec { stick_bottom: true })))
 }
 
 fn header(sess: &Session, dec: &dyn Fn(&str) -> String) -> El {
@@ -239,11 +245,10 @@ pub fn welcome(s: &State) -> El {
         12..=17 => "Good afternoon.",
         _ => "Good evening.",
     };
-    let k = super::decode::screen(s.clock, s.decode_t0);
     let fr = super::decode::frame(s.clock);
     let card = super::float(col().key("greet").px(28.0).py(20.0).gap(8.0).items_center())
         .child(text(hhmm).font(LABEL).color(p.dim))
-        .child(text(super::decode::sweep(greet, k, fr)).font(DISPLAY).color(p.text))
+        .child(text(super::decode::reveal(greet, s.clock - s.decode_t0, 0.0, fr)).font(DISPLAY).color(p.text))
         .child(row().gap(8.0).center_y()
             .child(super::sidebar::agent_square(s.new_agent.icon(), 20.0, false))
             .child(text(format!("{} · {}", s.new_agent.name(), super::friendly_model(s.new_agent.default_model()))).font(SMALL).color(p.dim)));
