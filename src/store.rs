@@ -35,6 +35,16 @@ pub fn save(s: &State) {
     if let Ok(j) = serde_json::to_string_pretty(&metas) {
         let _ = std::fs::write(path(), j);
     }
+    // para o list_agents(scope: sessions) da extensão
+    let peers: Vec<_> = s.sessions.iter().map(|x| serde_json::json!({
+        "agent_id": format!("session-{}", x.id),
+        "title": x.title,
+        "agent": x.agent.name(),
+        "status": format!("{:?}", x.status).to_lowercase(),
+    })).collect();
+    let dir = crate::omp::state_dir().join("ompdsh");
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(dir.join("raster-sessions.json"), serde_json::Value::Array(peers).to_string());
 }
 
 pub fn load(s: &mut State) {

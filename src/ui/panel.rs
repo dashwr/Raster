@@ -8,6 +8,7 @@ use rune::{El, Pixels, col, el, row, text};
 use super::{LABEL, SMALL, pal, spinner};
 use crate::State;
 use crate::session::{Item, SubStatus};
+use crate::swarm::{Member, Phase};
 
 pub const W: f32 = 236.0;
 
@@ -32,17 +33,31 @@ pub fn view(s: &State) -> El {
     };
 
     let mut grid = row().key("swarm-grid").w_full().px(12.0).gap(10.0).flex_wrap();
-    let live: Vec<_> = sess.subs.iter().collect();
+    let watched = s.swarm.lock().ok().and_then(|m| m.get(&sess.id).cloned()).unwrap_or_default();
+    let live: Vec<Member> = if watched.is_empty() {
+        sess.subs.iter().map(|x| Member {
+            id: x.id.clone(), label: x.label.clone(), agent: String::new(), model: String::new(),
+            phase: if x.status == SubStatus::Working { Phase::Thinking } else { Phase::Idle },
+        }).collect()
+    } else {
+        watched
+    };
     for sub in &live {
-        let mark = match sub.status {
-            SubStatus::Working => spinner(s.spin),
-            SubStatus::Idle => "·",
+        let (mark, word) = match sub.phase {
+            Phase::Thinking => (spinner(s.spin), "pensando"),
+            Phase::Writing => (spinner(s.spin), "escrevendo"),
+            Phase::Tool => ("⚒", "ferramenta"),
+            Phase::Idle => ("·", "ocioso"),
+            Phase::Dead => ("✗", "morto"),
         };
+        let busy = matches!(sub.phase, Phase::Thinking | Phase::Writing | Phase::Tool);
+        let tip = format!("{} · {} · {}", sub.label, if sub.agent.is_empty() { "subagente" } else { &sub.agent }, crate::ui::friendly_model(&sub.model));
         grid = grid.child(
             col().key(format!("sub-{}", sub.id)).w(58.0).gap(4.0).items_center()
                 .child(el().size(40.0, 40.0).border(1.0, p.line).pixels_fit(&avatar(&sub.id), rune::SurfaceFit::Fill))
-                .child(text(mark).font(LABEL).color(if sub.status == SubStatus::Working { p.text } else { p.faint }))
-                .child(text(sub.label.clone()).font(SMALL).color(p.dim).truncate().w(58.0)),
+                .child(row().gap(4.0).child(text(mark).font(LABEL).color(if busy { p.text } else { p.faint })).child(text(word).font(SMALL).color(p.faint)))
+                .child(text(sub.label.clone()).font(SMALL).color(p.dim).truncate().w(58.0))
+                .help(tip),
         );
     }
 

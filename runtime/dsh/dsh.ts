@@ -104,7 +104,7 @@ function shapePayload(p: any): any {
 		.filter((b: any) => typeof b?.text === "string" && /^You are Claude Code|billing/i.test(b.text))
 		.map(({ cache_control: _, ...b }: any) => b);
 	p.system = [...keep, { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }];
-	p.tools = TOOLS;
+	p.tools = activeTools();
 	delete p.tool_choice;
 	p.thinking = { budget_tokens: 2048, display: "summarized", type: "enabled" };
 	p.max_tokens = 128000;
@@ -141,6 +141,11 @@ function normalize(m: any): any {
 	return { role: m.role, content };
 }
 
+// Raster: subagente só vê as ferramentas básicas e as que a mãe liberou; raiz vê todas
+function activeTools(): any[] {
+	return ALLOWED ? TOOLS.filter(t => ALLOWED.has(t.name)) : TOOLS;
+}
+
 // Raster: todo bash passa pelo rtk quando há reescrita conhecida
 function rtkRewrite(cmd: string): string {
 	if (process.env.RASTER_RTK === "0") return cmd;
@@ -173,7 +178,7 @@ function formatBash(stdout: string, stderr: string, code: number | null): string
 
 // ---------- subagentes ----------
 
-type Child = { id: string; label: string; status: "running" | "inactive"; proc?: ChildProcess; sessionDir: string; final: string; sentBeforeFinish: boolean; runs: number };
+type Child = { id: string; label: string; status: "running" | "inactive"; proc?: ChildProcess; sessionDir: string; final: string; sentBeforeFinish: boolean; runs: number; model?: string; effort?: string; agent?: string; tools?: string[] };
 const children = new Map<string, Child>();
 const pending: string[] = [];
 let busy = false;
@@ -200,9 +205,22 @@ function maybeExit(pi: ExtensionAPI) {
 	if (!KEEPALIVE) setTimeout(() => !busy && process.exit(0), 200);
 }
 
-function ompArgs(extra: string[], prompt: string) {
+// Raster: nomes amigáveis de modelo aceitos pelo subagent
+const MODEL_ALIASES: Record<string, string> = {
+	opus: "anthropic/claude-opus-5-5", sonnet: "anthropic/claude-sonnet-5-5", haiku: "anthropic/claude-haiku-5-5", fable: "anthropic/claude-fable-5-1",
+};
+const AGENT_MODELS: Record<string, string> = JSON.parse(process.env.RASTER_AGENT_MODELS ?? "{}");
+const BASIC_TOOLS = ["bash", "read", "write", "edit", "glob", "grep", "read_image", "send_message", "todo_write", "working_directory"];
+const ALLOWED = process.env.RASTER_ALLOWED_TOOLS ? new Set([...BASIC_TOOLS, ...process.env.RASTER_ALLOWED_TOOLS.split(",").filter(Boolean)]) : undefined;
+function resolveModel(m?: string, agent?: string): string {
+	const want = m?.trim().toLowerCase();
+	if (want) return MODEL_ALIASES[want] ?? (want.includes("/") ? m!.trim() : `anthropic/${m!.trim()}`);
+	return (agent && AGENT_MODELS[agent]) || MODEL_SEL;
+}
+
+function ompArgs(extra: string[], prompt: string, c?: Child) {
 	return [
-		"-p", "--no-title", "--model", MODEL_SEL, "--thinking", "low", "--auto-approve", "--mode", "json",
+		"-p", "--no-title", "--model", c?.model ?? MODEL_SEL, "--thinking", c?.effort ?? "low", "--auto-approve", "--mode", "json",
 		"--no-tools", "--no-context-files", "--no-skills", "--no-rules", "--no-extensions", "-e", EXT, ...extra, prompt,
 	];
 }
@@ -210,11 +228,18 @@ function ompArgs(extra: string[], prompt: string) {
 function runChild(pi: ExtensionAPI, c: Child, prompt: string, env: Record<string, string>, cdir: string) {
 	c.status = "running";
 	c.runs++;
+	writeSwarm();
 	c.sentBeforeFinish = false;
 	const extra = ["--session-dir", c.sessionDir, ...(c.runs > 1 ? ["-c"] : [])];
-	const proc = spawn(process.env.RASTER_OMP ?? "omp", ompArgs(extra, prompt), {
+	const agentEnv: Record<string, string> = {};
+	if (c.agent && process.env.RASTER_AGENTS_DIR) {
+		agentEnv.RASTER_PROMPT_FILES = [path.join(process.env.RASTER_AGENTS_DIR, `${c.agent}.md`), process.env.RASTER_CENTER ?? ""].filter(Boolean).join(":");
+	}
+	agentEnv.RASTER_ALLOWED_TOOLS = (c.tools ?? []).join(",");
+	agentEnv.OMPDSH_MODEL = c.model ?? MODEL_SEL;
+	const proc = spawn(process.env.RASTER_OMP ?? "omp", ompArgs(extra, prompt, c), {
 		cwd: cdir,
-		env: { ...process.env, ...env, OMPDSH_DEPTH: String(DEPTH + 1), OMPDSH_AGENT_ID: c.id, OMPDSH_PARENT_ID: AGENT_ID, OMPDSH_ROOT: ROOT },
+		env: { ...process.env, ...agentEnv, ...env, OMPDSH_DEPTH: String(DEPTH + 1), OMPDSH_AGENT_ID: c.id, OMPDSH_PARENT_ID: AGENT_ID, OMPDSH_ROOT: ROOT },
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	c.proc = proc;
@@ -242,6 +267,7 @@ function runChild(pi: ExtensionAPI, c: Child, prompt: string, env: Record<string
 			log.end();
 			c.status = "inactive";
 			c.proc = undefined;
+			writeSwarm();
 			resolve();
 		}),
 	);
@@ -254,8 +280,13 @@ function childPrompt(id: string, prompt: string) {
 function startChild(pi: ExtensionAPI, args: any, fork: boolean): string {
 	if (DEPTH >= MAX_DEPTH) throw new Error(`Delegation depth limit reached: current ${DEPTH}, maximum ${MAX_DEPTH}. Carry out the work directly.`);
 	const id = randomUUID();
-	const c: Child = { id, label: args.description ?? "", status: "running", sessionDir: path.join(ROOT, "sessions", id), final: "", sentBeforeFinish: false, runs: 0 };
+	const agent = typeof args.agent === "string" ? args.agent : undefined;
+	const c: Child = {
+		id, label: args.description ?? "", status: "running", sessionDir: path.join(ROOT, "sessions", id), final: "", sentBeforeFinish: false, runs: 0,
+		agent, model: resolveModel(args.model, agent), effort: args.effort, tools: Array.isArray(args.tools) ? args.tools : [],
+	};
 	children.set(id, c);
+	writeSwarm();
 	fs.mkdirSync(inboxOf(id), { recursive: true });
 	const env: Record<string, string> = {};
 	if (fork) {
@@ -298,6 +329,23 @@ function pollInbox(pi: ExtensionAPI) {
 		const c = children.get(m.from);
 		if (c) c.sentBeforeFinish = true;
 		notify(pi, `Agent ${m.from} sent a message: ${m.message}`);
+	}
+}
+
+// Raster: estado do swarm desta sessão, lido pelo app (pensando, ferramenta, morto)
+function writeSwarm() {
+	if (DEPTH !== 0) return;
+	const list = [...children.values()].map(c => ({ id: c.id, label: c.label, status: c.status, agent: c.agent, model: c.model, pid: c.proc?.pid }));
+	try {
+		fs.writeFileSync(path.join(ROOT, `swarm-${AGENT_ID}.json`), JSON.stringify(list));
+	} catch {}
+}
+
+function rasterSessions(): any[] {
+	try {
+		return JSON.parse(fs.readFileSync(path.join(ROOT, "raster-sessions.json"), "utf8"));
+	} catch {
+		return [];
 	}
 }
 
@@ -510,6 +558,11 @@ export default function ompDsh(pi: ExtensionAPI) {
 			return text(startChild(pi, a, true));
 		},
 		async send_message(a) {
+			if (DEPTH === 0 && typeof a.agent_id === "string" && a.agent_id.startsWith("session-") && a.agent_id !== AGENT_ID) {
+				fs.mkdirSync(inboxOf(a.agent_id), { recursive: true });
+				deliver(a.agent_id, a.message);
+				return text(`message delivered to session ${a.agent_id}`);
+			}
 			if (a.agent_id === PARENT_ID) {
 				deliver(PARENT_ID!, a.message);
 				return text(`message delivered to agent ${a.agent_id}`);
@@ -520,8 +573,13 @@ export default function ompDsh(pi: ExtensionAPI) {
 			else runChild(pi, c, a.message, {}, cwd).then(() => finished(pi, c));
 			return text(`message delivered to agent ${a.agent_id}`);
 		},
-		async list_agents() {
-			return text([...children.values()].map(c => `${c.id} [${c.status}] — ${c.label}`).join("\n") || "No subagents");
+		async list_agents(a) {
+			const kids = [...children.values()].map(c => `${c.id} [${c.status}] — ${c.label}${c.agent ? ` (${c.agent}, ${c.model})` : ""}`);
+			if (a?.scope === "sessions" && DEPTH === 0) {
+				const ss = rasterSessions().filter((x: any) => x.agent_id !== AGENT_ID).map((x: any) => `${x.agent_id} [${x.status}] — ${x.agent}: ${x.title}`);
+				return text(ss.join("\n") || "No other sessions");
+			}
+			return text(kids.join("\n") || "No subagents");
 		},
 		async interrupt_agent(a) {
 			const c = children.get(a.agent_id);
@@ -565,7 +623,7 @@ export default function ompDsh(pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", async () => {
-		await pi.setActiveTools(TOOLS.map(t => t.name));
+		await pi.setActiveTools(activeTools().map(t => t.name));
 	});
 	pi.on("agent_start", () => {
 		busy = true;

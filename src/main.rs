@@ -5,6 +5,7 @@ mod auth;
 mod omp;
 mod session;
 mod store;
+mod swarm;
 mod ui;
 
 use std::path::PathBuf;
@@ -67,6 +68,7 @@ pub struct State {
     pub clock: f64,
     pub logged_in: bool,
     pub preview: Option<String>,
+    pub swarm: swarm::Swarm,
     pub time: std::sync::Arc<std::sync::Mutex<(u32, String)>>,
 }
 
@@ -94,6 +96,7 @@ impl State {
             clock: 0.0,
             logged_in: auth::claude_logged_in(),
             preview: None,
+            swarm: Default::default(),
             time: Default::default(),
         };
         store::load(&mut s);
@@ -229,6 +232,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
 
 fn setup(s: &mut State, waker: rune::Waker) {
     ui::transcript::tick_clock(s.time.clone(), waker.clone());
+    swarm::watch(s.swarm.clone(), waker.clone());
     s.waker = Some(waker);
     ui::dither::animate(s.bg.clone(), 960, 600);
 }

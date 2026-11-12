@@ -98,6 +98,9 @@ pub fn spawn(s: Spawn, inbox: Inbox, waker: Waker) -> std::io::Result<Proc> {
         .env("RASTER_OMP", &omp)
         .env("RASTER_KEEPALIVE", "1")
         .env("RASTER_PROMPT_FILES", prompts.join(":"))
+        .env("RASTER_AGENTS_DIR", crate::agents::agents_dir())
+        .env("RASTER_CENTER", st.join("Center.md"))
+        .env("RASTER_AGENT_MODELS", crate::agents::default_models_json())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());

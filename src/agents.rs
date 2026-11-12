@@ -61,6 +61,11 @@ impl Agent {
     }
 }
 
+pub fn default_models_json() -> String {
+    let m: serde_json::Map<String, serde_json::Value> = ALL.iter().map(|a| (a.name().to_string(), a.default_model().into())).collect();
+    serde_json::Value::Object(m).to_string()
+}
+
 pub fn agents_dir() -> PathBuf {
     let rt = crate::omp::runtime_dir();
     let beside = rt.parent().map(|p| p.join("agents"));
