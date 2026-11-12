@@ -1,0 +1,100 @@
+//! Lista de sessões em `~/.raster/sessions.json` (metadados; o histórico vive nas sessões do omp).
+
+use serde::{Deserialize, Serialize};
+
+use crate::State;
+use crate::agents::{ALL, Agent};
+use crate::session::{AskKind, AskQ, Item, Session, Status, ToolCall};
+
+#[derive(Serialize, Deserialize)]
+struct Meta {
+    id: u64,
+    title: String,
+    agent: String,
+    model: String,
+    thinking: String,
+    cwd: String,
+    started: bool,
+}
+
+fn path() -> std::path::PathBuf {
+    crate::omp::state_dir().join("sessions.json")
+}
+
+pub fn save(s: &State) {
+    let metas: Vec<Meta> = s.sessions.iter().map(|x| Meta {
+        id: x.id,
+        title: x.title.clone(),
+        agent: x.agent.name().into(),
+        model: x.model.clone(),
+        thinking: x.thinking.clone(),
+        cwd: x.cwd.display().to_string(),
+        started: x.started,
+    }).collect();
+    let _ = std::fs::create_dir_all(crate::omp::state_dir());
+    if let Ok(j) = serde_json::to_string_pretty(&metas) {
+        let _ = std::fs::write(path(), j);
+    }
+}
+
+pub fn load(s: &mut State) {
+    let Ok(raw) = std::fs::read_to_string(path()) else { return };
+    let Ok(metas) = serde_json::from_str::<Vec<Meta>>(&raw) else { return };
+    for m in metas {
+        let agent = ALL.iter().copied().find(|a| a.name() == m.agent).unwrap_or(Agent::Code);
+        let mut x = Session::new(m.id, agent, m.cwd.into());
+        x.title = m.title;
+        x.model = m.model;
+        x.thinking = m.thinking;
+        x.started = m.started;
+        if x.started {
+            x.items.push(Item::Notice("histórico guardado no omp; mande uma mensagem para retomar".into()));
+        }
+        s.next_id = s.next_id.max(m.id + 1);
+        s.sessions.push(x);
+    }
+}
+
+/// Cena `demo` para snapshots headless (`raster --snap out.png --scene demo`).
+pub fn demo(s: &mut State) {
+    s.sessions.clear();
+    let mut a = Session::new(1, Agent::Code, "/home/user/projects/raster".into());
+    a.title = "montar o composer".into();
+    a.status = Status::Working;
+    a.ctx_tokens = 84_000;
+    a.items = vec![
+        Item::User("cria o composer com seletor de modelo e effort".into()),
+        Item::Assistant {
+            mid: "m1".into(),
+            text: "Vou ler o layout atual e montar o composer.\n\n| peça | estado |\n|---|---|\n| modelo | ok |\n| effort | falta |\n\n```rust\nfn view(s: &State) -> El { col() }\n```".into(),
+            thinking: String::new(),
+            streaming: false,
+        },
+        Item::Tools {
+            calls: vec![
+                ToolCall { id: "t1".into(), name: "read".into(), summary: "src/ui/composer.rs".into(), output: String::new(), done: true, error: false },
+                ToolCall { id: "t2".into(), name: "bash".into(), summary: "cargo check".into(), output: "Finished dev".into(), done: false, error: false },
+            ],
+            open: true,
+        },
+        Item::Ask {
+            req: "q1".into(),
+            kind: AskKind::Ask(vec![AskQ {
+                id: "a".into(),
+                question: "Onde fica o seletor de effort?".into(),
+                options: vec![("card com slider".into(), "abre acima do composer".into()), ("menu".into(), "lista simples".into())],
+                multi: false,
+                picked: vec![0],
+            }]),
+            answer: None,
+        },
+    ];
+    let mut b = Session::new(2, Agent::Search, "/home/user".into());
+    b.title = "preço da rtx 5070".into();
+    b.status = Status::Asking;
+    let mut c = Session::new(3, Agent::Test, "/home/user/projects/raster".into());
+    c.title = "e2e do login".into();
+    c.status = Status::Idle;
+    s.sessions = vec![a, b, c];
+    s.current = Some(1);
+}

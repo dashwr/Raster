@@ -1,0 +1,627 @@
+[
+ {
+  "description": "Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; pass `workdir` instead of using `cd`. Managed `$DSH_*` variables expose current harness environment facts. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `${VAR:?}`. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "command": {
+     "description": "The bash command to execute.",
+     "type": "string"
+    },
+    "description": {
+     "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\".",
+     "type": "string"
+    },
+    "justification": {
+     "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request.",
+     "type": "string"
+    },
+    "run_in_background": {
+     "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.",
+     "type": "boolean"
+    },
+    "sandbox_permissions": {
+     "description": "The narrowest wider sandbox mode for a one-shot retry of the exact command the sandbox just denied; the retry asks the user for approval.",
+     "enum": [
+      "workspace-write",
+      "danger-full-access"
+     ],
+     "type": "string"
+    },
+    "timeoutMs": {
+     "description": "Timeout in milliseconds. The executor applies its configured default and cap; on expiry the command moves to the background as a job instead of being killed.",
+     "type": "number"
+    },
+    "workdir": {
+     "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "description",
+    "command"
+   ],
+   "type": "object"
+  },
+  "name": "bash"
+ },
+ {
+  "description": "Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "max_goal_rounds": {
+     "description": "Optional positive safe-integer limit on automatic continuation rounds.",
+     "type": "number"
+    },
+    "objective": {
+     "description": "The concrete completion objective inferred from the direct human request.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "objective"
+   ],
+   "type": "object"
+  },
+  "name": "create_goal"
+ },
+ {
+  "description": "Edit an existing UTF-8 text file by replacing literal text.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "file_path": {
+     "description": "Path to edit, resolved by the filesystem backend. Provide `file_path` before `old_string` and `new_string` in the arguments.",
+     "type": "string"
+    },
+    "justification": {
+     "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.",
+     "type": "string"
+    },
+    "new_string": {
+     "description": "Literal replacement text. Use an empty string to delete the match.",
+     "type": "string"
+    },
+    "old_string": {
+     "description": "Literal text to replace.",
+     "type": "string"
+    },
+    "replace_all": {
+     "description": "Replace all matches. Defaults to false; when false, old_string must appear exactly once.",
+     "type": "boolean"
+    },
+    "sandbox_permissions": {
+     "description": "The narrowest wider sandbox mode for a one-shot retry of the exact operation the sandbox just denied; the retry asks the user for approval.",
+     "enum": [
+      "workspace-write",
+      "danger-full-access"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_path",
+    "old_string",
+    "new_string"
+   ],
+   "type": "object"
+  },
+  "name": "edit"
+ },
+ {
+  "description": "Read the current session goal, including the id and revision that update_goal requires.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {},
+   "required": [],
+   "type": "object"
+  },
+  "name": "get_goal"
+ },
+ {
+  "description": "Find files, not directories, whose paths match a glob pattern, including hidden and ignored files. Returns up to 100 paths in modification-time order; a larger result keeps the first paths and reports where the complete list was saved.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "path": {
+     "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it.",
+     "type": "string"
+    },
+    "pattern": {
+     "description": "Glob pattern to match file paths against (e.g. \"**/*.ts\", \"src/**/*.test.js\"). A pattern with no \"/\" matches the basename at any depth, so \"*\" and \"*.ts\" both search the whole tree; include a separator to anchor the depth.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "pattern"
+   ],
+   "type": "object"
+  },
+  "name": "glob"
+ },
+ {
+  "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns up to 250 matches; a larger result reports where the complete match list was saved.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "include": {
+     "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\"). Not a list; negation is not supported.",
+     "type": "string"
+    },
+    "path": {
+     "description": "File or directory to search. Defaults to the session workspace; a relative path resolves against it.",
+     "type": "string"
+    },
+    "pattern": {
+     "description": "Regular expression to search for (ripgrep syntax).",
+     "type": "string"
+    }
+   },
+   "required": [
+    "pattern"
+   ],
+   "type": "object"
+  },
+  "name": "grep"
+ },
+ {
+  "description": "Ask a subagent to stop its current work. This call returns without waiting for it to stop. You can continue a local direct child's conversation later with send_message. External executions stop permanently and cannot receive follow-ups. Subagents it started will keep running.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "agent_id": {
+     "description": "The id of an agent created under you: your direct child or a deeper descendant.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "agent_id"
+   ],
+   "type": "object"
+  },
+  "name": "interrupt_agent"
+ },
+ {
+  "description": "Request cancellation of a running background job.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "job_id": {
+     "description": "Job id returned by the tool that started the background work.",
+     "type": "string"
+    },
+    "reason": {
+     "description": "Optional short reason, recorded in the log and forwarded to the job.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "job_id"
+   ],
+   "type": "object"
+  },
+  "name": "job_kill"
+ },
+ {
+  "description": "List your background jobs (running and finished) with their ids, kinds, and statuses.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {},
+   "required": [],
+   "type": "object"
+  },
+  "name": "job_list"
+ },
+ {
+  "description": "Read a background job: output since the previous read for stream jobs, or the result of a finished final-output job.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "job_id": {
+     "description": "Job id returned by the tool that started the background work.",
+     "type": "string"
+    },
+    "timeout_ms": {
+     "description": "Max wait in milliseconds with wait: true. Defaults to and is capped by configuration.",
+     "type": "number"
+    },
+    "wait": {
+     "description": "Block until the job finishes or the timeout expires; a timed-out wait leaves the job running. Defaults to false.",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "job_id"
+   ],
+   "type": "object"
+  },
+  "name": "job_output"
+ },
+ {
+  "description": "List subagents you started, with their ids, labels, and status. running means it is working; inactive means it is not currently working. You will be notified when a subagent finishes; there is no need to keep checking its status. Use send_message to continue the conversation.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "scope": {
+     "description": "children (default) lists direct children, which accept send_message in any status. descendants lists the whole tree below you with each entry's parent session id and depth; entries deeper than 1 accept only interrupt_agent.",
+     "enum": [
+      "children",
+      "descendants"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [],
+   "type": "object"
+  },
+  "name": "list_agents"
+ },
+ {
+  "description": "Read a UTF-8 text file and return line-numbered content.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "file_path": {
+     "description": "Path to read, resolved by the filesystem backend.",
+     "type": "string"
+    },
+    "limit": {
+     "description": "Maximum number of lines to return. Defaults to 2000.",
+     "type": "number"
+    },
+    "offset": {
+     "description": "1-based first line to return. Defaults to 1.",
+     "type": "number"
+    }
+   },
+   "required": [
+    "file_path"
+   ],
+   "type": "object"
+  },
+  "name": "read"
+ },
+ {
+  "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "file_path": {
+     "description": "Path to the image file, resolved by the filesystem backend.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_path"
+   ],
+   "type": "object"
+  },
+  "name": "read_image"
+ },
+ {
+  "description": "Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "agent_id": {
+     "description": "The agent id of your direct continuable child, or your direct parent when you are a resident continuable child.",
+     "type": "string"
+    },
+    "message": {
+     "description": "The message to deliver to the agent.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "agent_id",
+    "message"
+   ],
+   "type": "object"
+  },
+  "name": "send_message"
+ },
+ {
+  "description": "Load the full instructions for a skill. Call it before acting on a task that names or clearly matches a skill in the session skill catalog.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "name": {
+     "description": "The exact skill name from the available skills list.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "skill"
+ },
+ {
+  "description": "Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes. The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "cwd": {
+     "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent.",
+     "type": "string"
+    },
+    "description": {
+     "description": "A short (3-5 word) description of the delegated task, for display.",
+     "type": "string"
+    },
+    "prompt": {
+     "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "description",
+    "prompt"
+   ],
+   "type": "object"
+  },
+  "name": "subagent"
+ },
+ {
+  "description": "Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes. The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "cwd": {
+     "description": "Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent.",
+     "type": "string"
+    },
+    "description": {
+     "description": "A short (3-5 word) description of the delegated task, for display.",
+     "type": "string"
+    },
+    "prompt": {
+     "description": "The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "description",
+    "prompt"
+   ],
+   "type": "object"
+  },
+  "name": "subagent_fork"
+ },
+ {
+  "description": "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "todos": {
+     "description": "The COMPLETE task list, replacing any previous list.",
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "content": {
+        "description": "What the task is — a short imperative line.",
+        "type": "string"
+       },
+       "status": {
+        "description": "pending (not started) | in_progress (now) | completed (done).",
+        "enum": [
+         "pending",
+         "in_progress",
+         "completed"
+        ],
+        "type": "string"
+       }
+      },
+      "required": [
+       "content",
+       "status"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "todos"
+   ],
+   "type": "object"
+  },
+  "name": "todo_write"
+ },
+ {
+  "description": "Update the current goal.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "action": {
+     "description": "edit, pause, and resume require a direct top-level human request. complete and blocked are also allowed during an automatic continuation of this goal; blocked is rejected before the configured minimum round count.",
+     "enum": [
+      "edit",
+      "pause",
+      "resume",
+      "complete",
+      "blocked"
+     ],
+     "type": "string"
+    },
+    "blocked_reason": {
+     "description": "Required only with action blocked: the concrete condition that persisted across rounds and blocks progress.",
+     "type": "string"
+    },
+    "goal_id": {
+     "description": "Exact id returned by get_goal.",
+     "type": "string"
+    },
+    "max_goal_rounds": {
+     "description": "Replacement cap; valid only with action edit.",
+     "type": "number"
+    },
+    "objective": {
+     "description": "Replacement objective; valid only with action edit.",
+     "type": "string"
+    },
+    "revision": {
+     "description": "Exact positive revision returned by get_goal.",
+     "type": "number"
+    }
+   },
+   "required": [
+    "goal_id",
+    "revision",
+    "action"
+   ],
+   "type": "object"
+  },
+  "name": "update_goal"
+ },
+ {
+  "description": "Fetch the content of a specific HTTP(S) URL and return it decoded to text.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "url": {
+     "description": "The HTTP(S) URL to fetch.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "url"
+   ],
+   "type": "object"
+  },
+  "name": "web_fetch"
+ },
+ {
+  "description": "Run a JavaScript workflow script that orchestrates subagents at scale. Use this for work that fans out across many independent pieces — an audit over many files, a migration, multi-angle research, adversarial verification of findings — where you write the orchestration as a script instead of delegating turn by turn.\n\nScript-body hooks:\n- `agent(prompt, opts?): Promise<any>` — run one subagent to completion. Without `opts.schema` it resolves to the child's final text; with `opts.schema` (an object-rooted JSON Schema using ONLY type/properties/required/additionalProperties/items/enum/const/oneOf) it resolves to the validated object. Resolves `null` when the child fails (filter with `.filter(Boolean)`). Other opts: `label` (display), `phase` (progress group), and independent `provider`/`model` LLM target overrides.\n- `pipeline(items, ...stages): Promise<any[]>` — run each item through the stages independently with NO barrier between stages (prefer this for multi-stage work). Each stage receives `(prev, item, index)`. A stage throw drops that ITEM to `null` and skips its remaining stages.\n- `parallel(thunks): Promise<any[]>` — run zero-argument functions concurrently and await ALL of them (a barrier; use only when a stage genuinely needs every prior result together). A throwing thunk resolves to `null`.\n- `phase(title)` — start a progress phase; `log(message)` — narrate progress; `args` — the tool call's `args` input, verbatim.\n\nMisused hooks (bad arguments, unknown options, unsupported schemas, tripped caps) end the whole script instead of producing `null`. The script has no filesystem, network, timer, or Node.js APIs; the agents do the work.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "args": {
+     "additionalProperties": true,
+     "description": "Optional JSON input exposed to the script as the `args` global (wrap a bare list as a field, e.g. {\"files\": [...]}).",
+     "type": "object"
+    },
+    "meta": {
+     "additionalProperties": true,
+     "description": "The workflow identity as plain JSON, not code.",
+     "properties": {
+      "description": {
+       "description": "One-line description of what the workflow does.",
+       "type": "string"
+      },
+      "name": {
+       "description": "Short kebab-case workflow name.",
+       "type": "string"
+      },
+      "phases": {
+       "description": "Optional phase declarations matched by phase() calls.",
+       "items": {
+        "additionalProperties": true,
+        "properties": {
+         "detail": {
+          "description": "Optional one-line description of the phase.",
+          "type": "string"
+         },
+         "model": {
+          "description": "Optional model override this phase is expected to use.",
+          "type": "string"
+         },
+         "provider": {
+          "description": "Optional provider override this phase is expected to use.",
+          "type": "string"
+         },
+         "title": {
+          "description": "The phase title phase() calls match by exact string.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "title"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "whenToUse": {
+       "description": "Optional guidance on when this workflow applies.",
+       "type": "string"
+      }
+     },
+     "required": [
+      "name",
+      "description"
+     ],
+     "type": "object"
+    },
+    "run_in_background": {
+     "description": "Run as a background job: return a job id immediately instead of waiting; the return value arrives with the completion notice.",
+     "type": "boolean"
+    },
+    "script": {
+     "description": "The plain JavaScript body, not TypeScript and without an `export const meta` statement; top-level await is allowed. End with `return <value>`; the JSON-serializable value is this tool's result.",
+     "type": "string"
+    }
+   },
+   "required": [
+    "script",
+    "meta"
+   ],
+   "type": "object"
+  },
+  "name": "workflow"
+ },
+ {
+  "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "cd": {
+     "description": "Existing directory to enter. Omit to read the current directory.",
+     "type": "string"
+    }
+   },
+   "required": [],
+   "type": "object"
+  },
+  "name": "working_directory"
+ },
+ {
+  "cache_control": {
+   "type": "ephemeral"
+  },
+  "description": "Create or fully replace a UTF-8 text file.",
+  "eager_input_streaming": true,
+  "input_schema": {
+   "properties": {
+    "content": {
+     "description": "Full UTF-8 text content to write.",
+     "type": "string"
+    },
+    "file_path": {
+     "description": "Path to write, resolved by the filesystem backend. Provide `file_path` before `content` in the arguments.",
+     "type": "string"
+    },
+    "justification": {
+     "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request.",
+     "type": "string"
+    },
+    "sandbox_permissions": {
+     "description": "The narrowest wider sandbox mode for a one-shot retry of the exact operation the sandbox just denied; the retry asks the user for approval.",
+     "enum": [
+      "workspace-write",
+      "danger-full-access"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_path",
+    "content"
+   ],
+   "type": "object"
+  },
+  "name": "write"
+ }
+]
