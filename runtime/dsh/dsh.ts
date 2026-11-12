@@ -415,7 +415,7 @@ export default function ompDsh(pi: ExtensionAPI) {
 	const z = pi.zod;
 	const anyArgs = z.object({}).passthrough();
 
-	const impl: Record<string, (a: any, signal?: AbortSignal) => Promise<any>> = {
+	const impl: Record<string, (a: any, signal?: AbortSignal, ctx?: any) => Promise<any>> = {
 		async bash(a) {
 			const dir = a.workdir ? abs(a.workdir) : cwd;
 			const proc = spawn("bash", ["-c", rtkRewrite(a.command)], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
@@ -605,6 +605,28 @@ export default function ompDsh(pi: ExtensionAPI) {
 		async workflow(a) {
 			return text(await runWorkflow(pi, a));
 		},
+		// Raster: perguntas com alternativas, desenhadas como bloco interativo no app
+		async ask_user(a, _signal, ctx) {
+			const qs = (Array.isArray(a.questions) ? a.questions : []).map((q: any, i: number) => ({
+				id: String(q.id ?? `q${i + 1}`),
+				question: String(q.question ?? ""),
+				options: (q.options ?? []).map((o: any) => (typeof o === "string" ? { label: o } : { label: String(o.label), description: o.description })),
+				multi: !!q.multi,
+				recommended: typeof q.recommended === "number" ? q.recommended : undefined,
+			}));
+			if (!qs.length) throw new Error("ask_user needs at least one question");
+			const ui = ctx?.ui;
+			if (ui?.askDialog) {
+				const r = await ui.askDialog(qs, {});
+				if (!r) return text("The user dismissed the question without answering.");
+				if (r.kind === "chat") return text("The user wants to discuss this instead of choosing; ask in plain text.");
+				return text(r.results.map((x: any) => `${x.question}\n→ ${[...x.selectedOptions, ...(x.customInput ? [x.customInput] : [])].join(", ") || "(no answer)"}`).join("\n\n"));
+			}
+			if (!ui?.select) throw new Error("No interactive user is attached; decide with the best default and say so.");
+			const out: string[] = [];
+			for (const q of qs) out.push(`${q.question}\n→ ${(await ui.select(q.question, q.options)) ?? "(no answer)"}`);
+			return text(out.join("\n\n"));
+		},
 	};
 
 	for (const t of TOOLS) {
@@ -616,8 +638,8 @@ export default function ompDsh(pi: ExtensionAPI) {
 			description: t.description,
 			parameters: anyArgs,
 			loadMode: "essential",
-			async execute(_id: string, params: any, _onUpdate: unknown, _ctx: unknown, signal?: AbortSignal) {
-				return run(params, signal);
+			async execute(_id: string, params: any, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: any) {
+				return run(params, signal, ctx);
 			},
 		} as any);
 	}

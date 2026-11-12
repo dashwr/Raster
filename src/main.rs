@@ -264,6 +264,20 @@ fn probe(msg: String) -> ! {
             }
         }
         saw_work |= sess.status == Status::Working;
+        // RASTER_PROBE_ANSWER=1: responde perguntas com a primeira opção (testa a volta do ask)
+        if sess.status == Status::Asking && std::env::var("RASTER_PROBE_ANSWER").is_ok_and(|v| v == "1") {
+            let open = sess.items.iter().rposition(|i| matches!(i, session::Item::Ask { answer: None, .. }));
+            if let Some(idx) = open {
+                let resp = match &sess.items[idx] {
+                    session::Item::Ask { kind: session::AskKind::Ask(qs), .. } => serde_json::json!({"answers": qs.iter().map(|q| serde_json::json!({"id": q.id, "selectedOptions": [q.options.first().map(|o| o.0.clone()).unwrap_or_default()]})).collect::<Vec<_>>()}),
+                    session::Item::Ask { kind: session::AskKind::Select { options, .. }, .. } => serde_json::json!({"value": options.first().cloned().unwrap_or_default()}),
+                    session::Item::Ask { kind: session::AskKind::Confirm { .. }, .. } => serde_json::json!({"confirmed": true}),
+                    _ => serde_json::json!({"value": "ok"}),
+                };
+                sess.answer(idx, resp, "(probe: primeira opção)".into());
+            }
+            continue;
+        }
         let subs_busy = sess.subs.iter().any(|x| x.status == session::SubStatus::Working);
         if saw_work && (matches!(sess.status, Status::Stopped | Status::Asking) || (sess.status == Status::Idle && !subs_busy)) {
             break;
