@@ -285,7 +285,7 @@ fn setup(s: &mut State, waker: rune::Waker) {
 
 /// Pasta do projeto: o último argumento que é um diretório existente, senão a pasta atual.
 fn launch_dir() -> PathBuf {
-    let arg = std::env::args().skip(1).filter(|a| !a.starts_with('-')).map(PathBuf::from).filter(|p| p.is_dir()).last();
+    let arg = std::env::args().skip(1).filter(|a| !a.starts_with('-')).map(PathBuf::from).rfind(|p| p.is_dir());
     let dir = arg.or_else(|| std::env::current_dir().ok()).unwrap_or_else(|| PathBuf::from("."));
     dir.canonicalize().unwrap_or(dir)
 }

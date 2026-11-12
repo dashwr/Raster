@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "Cargo.toml", "Cargo.lock", "runtime/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["src/**", "Cargo.toml", "Cargo.lock", "runtime/**", ".github/workflows/ci.yml"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  # linker rápido (mold) e frontend paralelo do rustc; deps já otimizadas no perfil dev (Cargo.toml)
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold -Z threads=8"
+  RUSTC_BOOTSTRAP: "1"
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain (a mesma do rune)
+        run: rustup toolchain install 1.99.1 --profile minimal && rustup default 1.99.1
+      - uses: rui314/setup-mold@v1
+      - name: libxkbcommon (winit)
+        run: sudo apt-get -o Acquire::Retries=3 update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: testes
+        run: cargo test --locked
+      - name: clippy
+        run: rustup component add clippy && cargo clippy --locked -- -D warnings
+
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: instala o omp e confere a extensão dsh
+        working-directory: runtime
+        run: |
+          bun install --frozen-lockfile
+          bun build dsh/dsh.ts --target=bun --outdir=/tmp/dsh-check --external '@oh-my-pi/*'
+          ./node_modules/.bin/omp --version

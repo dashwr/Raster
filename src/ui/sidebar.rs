@@ -107,10 +107,12 @@ fn toggle(key: &'static str, label: &'static str, on: bool, f: fn(&mut State)) -
         .on_press(f)
 }
 
+type MenuAction = Box<dyn Fn(&mut State, &mut Tx)>;
+
 /// Menu de contexto desenhado no app (o Linux não tem menu nativo no rune).
 pub fn context_menu(m: Menu) -> El {
     let p = pal();
-    let item = |key: &'static str, label: &'static str, f: Box<dyn Fn(&mut State, &mut Tx)>| {
+    let item = |key: &'static str, label: &'static str, f: MenuAction| {
         row().key(key).px(12.0).py(6.0).w_full().hover(p.button)
             .child(text(label).font(BODY).color(p.text))
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
