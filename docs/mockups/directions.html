@@ -1,0 +1,524 @@
+<meta charset="utf-8">
+<title>Raster Directions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=VT323&family=IBM+Plex+Mono:wght@400;500&family=Silkscreen&family=Pixelify+Sans:wght@400;600&display=swap">
+<style>
+/* layout: four full app frames stacked, each a different world; one shared pixel icon set at the end */
+:root {
+  --page: #0b0b0b; --page-ink: #e8e8e8; --page-dim: #8a8a8a; --page-line: #262626;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--page-ink); font: 14px/1.5 var(--mono); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px }
+.wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px }
+header.top h1 { font: 600 20px/1.2 var(--mono); margin: 0 0 6px }
+header.top p { margin: 0; color: var(--page-dim); max-width: 70ch }
+section.dir { display: flex; flex-direction: column; gap: 14px }
+.dir-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 24px; align-items: start }
+.dir-head h2 { margin: 0; font: 600 16px/1.3 var(--mono) }
+.dir-head .tag { color: var(--page-dim); font-size: 12px }
+.dir-head dl { margin: 0; display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 2px 12px; font-size: 12px; color: var(--page-dim) }
+.dir-head dt { color: var(--page-ink) }
+.dir-head dd { margin: 0 }
+.scroller { overflow-x: auto; border: 1px solid var(--page-line) }
+@media (max-width: 760px) { .dir-head { grid-template-columns: 1fr } }
+
+/* ---------- shared app skeleton (each theme rewires it) ---------- */
+.app { width: 1200px; height: 680px; display: grid; position: relative; overflow: hidden; font-size: 13px }
+.app button, .app th, .app td { color: inherit }
+.app svg.i { width: 16px; height: 16px; flex: none; shape-rendering: crispEdges; fill: currentColor }
+.side, .main, .panel { min-width: 0; display: flex; flex-direction: column; overflow: hidden }
+.brand { display: flex; align-items: baseline; gap: 8px }
+.row { display: flex; align-items: center; gap: 8px }
+.grow { flex: 1; min-width: 0 }
+.trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.transcript { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 14px }
+.msg-user { align-self: flex-end; max-width: 70% }
+.toolgroup .call { display: flex; gap: 8px; align-items: center }
+.ask .opt { display: flex; gap: 10px; align-items: flex-start; cursor: pointer }
+.composer { position: relative }
+.cbar { display: flex; align-items: center; gap: 6px }
+.ctx { position: relative; width: 6px; height: 22px }
+.ctx i { position: absolute; left: 0; right: 0; bottom: 0; height: 42% }
+.pop, .menu { position: absolute; z-index: 5 }
+.swarm { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px }
+.ava { width: 40px; height: 40px; image-rendering: pixelated }
+.slider { display: grid; grid-template-columns: repeat(6, 1fr); position: relative }
+.slider span { text-align: center; font-size: 11px; padding-top: 14px; position: relative }
+.slider span::before { content: ""; position: absolute; left: 50%; top: 2px; width: 8px; height: 8px; transform: translateX(-50%) }
+
+/* =========================================================
+   A · BOX — pure TUI. Everything snaps to a character grid,
+   borders are box-drawing, selection is inverse video.
+   ========================================================= */
+.a { --bg: #000; --ink: #e6e6e6; --dim: #7d7d7d; --faint: #4a4a4a; --inv: #e6e6e6; --invink: #000;
+  background: var(--bg); color: var(--ink); font-family: "JetBrains Mono", monospace; grid-template-columns: 30ch 1fr 32ch; line-height: 20px }
+.a .side, .a .panel { padding: 10px 0 }
+.a .box { margin: 0 8px 10px; border: 1px solid var(--dim); position: relative; padding: 10px 8px 8px }
+.a .box > b { position: absolute; top: -10px; left: 8px; background: var(--bg); padding: 0 4px; font-weight: 400; color: var(--dim) }
+.a .brand b { font-weight: 600; letter-spacing: 1px }
+.a .brand small { color: var(--faint) }
+.a .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--dim) }
+.a .seg span { text-align: center; padding: 1px 0; color: var(--dim) }
+.a .seg .on { background: var(--inv); color: var(--invink) }
+.a .searchbtn { display: flex; gap: 8px; align-items: center; color: var(--dim); padding: 1px 6px; border: 1px solid var(--faint) }
+.a .searchbtn kbd { margin-left: auto; color: var(--faint); font: inherit }
+.a .tree .dir { color: var(--dim) }
+.a .tree .s { display: flex; gap: 8px; padding: 0 6px; align-items: center }
+.a .tree .s.sel { background: var(--inv); color: var(--invink) }
+.a .tree .s .st { margin-left: auto; color: inherit }
+.a .main { border-left: 1px solid var(--dim); border-right: 1px solid var(--dim) }
+.a .mhead { padding: 4px 12px; border-bottom: 1px solid var(--dim); display: flex; gap: 10px; color: var(--dim) }
+.a .mhead b { color: var(--ink); font-weight: 400 }
+.a .transcript { padding: 14px 16px }
+.a .msg-user { border-left: 2px solid var(--ink); padding-left: 10px; color: var(--ink); align-self: stretch; max-width: none }
+.a .msg-user::before { content: "> "; color: var(--dim) }
+.a .md p { margin: 0 0 8px }
+.a .md table { border-collapse: collapse; margin: 4px 0 }
+.a .md td, .a .md th { border: 1px solid var(--faint); padding: 0 8px; font-weight: 400; text-align: left }
+.a .toolgroup { border: 1px dashed var(--faint); padding: 6px 10px; color: var(--dim) }
+.a .toolgroup .call b { color: var(--ink); font-weight: 400 }
+.a .ask { border: 1px solid var(--ink); padding: 10px 12px }
+.a .ask .q { margin-bottom: 6px }
+.a .ask .opt.sel { background: var(--inv); color: var(--invink) }
+.a .ask .opt small { color: var(--dim) }
+.a .ask .opt.sel small { color: #333 }
+.a .composer { border-top: 1px solid var(--dim); padding: 8px 12px 10px }
+.a .cinput { color: var(--faint); padding: 4px 0 10px }
+.a .cinput::after { content: "█"; color: var(--ink); animation: blink 1s steps(1) infinite }
+.a .cbtn { display: inline-flex; align-items: center; gap: 6px; padding: 0 6px; height: 22px; border: 1px solid var(--faint); color: var(--dim); background: none; font: inherit }
+.a .cbtn.agent { color: #000; background: #e6e6e6; border-color: #e6e6e6 }
+.a .cbtn.send { background: var(--inv); color: var(--invink); border-color: var(--inv) }
+.a .ctx { border: 1px solid var(--dim) }
+.a .ctx i { background: var(--ink) }
+.a .pop { background: var(--bg); border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--faint); padding: 6px 0; width: 300px }
+.a .pop .h { color: var(--dim); padding: 0 10px 4px }
+.a .pop .it { display: flex; gap: 8px; padding: 0 10px; align-items: center }
+.a .pop .it.sel { background: var(--inv); color: var(--invink) }
+.a .pop .it small { margin-left: auto; color: var(--dim) }
+.a .pop .it.sel small { color: #333 }
+.a .slider { margin: 8px 10px 4px; border-top: 1px solid var(--dim) }
+.a .slider span { color: var(--dim) }
+.a .slider span::before { background: var(--bg); border: 1px solid var(--dim); top: -5px }
+.a .slider span.on { color: var(--ink) }
+.a .slider span.on::before, .a .slider span.lit::before { background: var(--ink); border-color: var(--ink) }
+.a .menu { background: var(--bg); border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--faint); padding: 4px 0; width: 200px }
+.a .menu .it { display: flex; gap: 10px; padding: 1px 10px; align-items: center }
+.a .menu .it.sel { background: var(--inv); color: var(--invink) }
+.a .menu .it kbd { margin-left: auto; font: inherit; color: var(--faint) }
+.a .menu hr { border: 0; border-top: 1px solid var(--faint); margin: 4px 0 }
+.a .menu .danger { color: #ff6b5b }
+.a .swarm .m { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dim) }
+.a .ava { outline: 1px solid var(--dim) }
+.a .bg .b { display: flex; gap: 8px; padding: 0 2px; color: var(--dim) }
+.a .bg .b b { color: var(--ink); font-weight: 400 }
+.a .bg pre { margin: 4px 0 0; border: 1px solid var(--faint); padding: 4px 6px; color: var(--dim); font: 11px/16px inherit; font-family: inherit; white-space: pre-wrap }
+.a .ctxpop { width: 260px; padding: 8px 10px }
+.a .meter { display: grid; grid-template-columns: repeat(40, 1fr); gap: 1px; height: 10px; margin: 6px 0 }
+.a .meter i { background: var(--faint) }
+.a .meter i.f { background: var(--ink) }
+@keyframes blink { 50% { opacity: 0 } }
+
+/* =========================================================
+   B · LEDGER — continuous-feed paper. Light, ink and carbon.
+   Sessions are tabs on the tractor edge, the chat is a printout.
+   ========================================================= */
+.b { --paper: #efede6; --paper2: #e6e3d9; --ink: #1d1c1a; --dim: #6b675e; --faint: #a9a497; --rule: #d3cfc3; --carbon: #2a3a8c;
+  background: var(--paper); color: var(--ink); font-family: "IBM Plex Mono", monospace; grid-template-columns: 56px 240px 1fr 260px }
+.b .feed { background: var(--paper2); border-right: 1px dashed var(--faint); display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 18px }
+.b .feed i { width: 12px; height: 12px; border-radius: 50%; background: var(--paper); box-shadow: inset 1px 1px 0 var(--faint) }
+.b .side { padding: 18px 16px; border-right: 1px solid var(--rule); gap: 14px }
+.b .brand b { font-weight: 500; font-size: 15px; letter-spacing: 3px }
+.b .brand small { color: var(--dim) }
+.b .switch { display: flex; align-items: center; gap: 10px; color: var(--dim) }
+.b .switch .tr { width: 34px; height: 18px; border: 1px solid var(--ink); position: relative; background: var(--paper) }
+.b .switch .tr::after { content: ""; position: absolute; top: 2px; left: 17px; width: 13px; height: 12px; background: var(--ink) }
+.b .switch b { color: var(--ink); font-weight: 500 }
+.b .searchbtn { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--ink); color: var(--paper) }
+.b .searchbtn kbd { margin-left: auto; font: inherit; font-size: 11px; opacity: .6 }
+.b .tree .dir { font-size: 11px; color: var(--dim); letter-spacing: 1px; margin-top: 6px; padding-bottom: 2px; border-bottom: 1px solid var(--rule) }
+.b .tree .s { display: flex; gap: 8px; padding: 5px 2px; align-items: center; border-bottom: 1px dotted var(--rule) }
+.b .tree .s.sel { color: var(--carbon) }
+.b .tree .s.sel::before { content: "▸"; margin-left: -10px }
+.b .tree .s .st { margin-left: auto; color: var(--dim) }
+.b .mhead { padding: 18px 28px 10px; display: flex; gap: 14px; align-items: baseline; border-bottom: 2px solid var(--ink) }
+.b .mhead b { font-weight: 500; font-size: 16px }
+.b .mhead span { color: var(--dim); font-size: 12px }
+.b .transcript { padding: 18px 28px; background-image: repeating-linear-gradient(var(--paper) 0 26px, var(--paper2) 26px 52px) }
+.b .msg-user { background: var(--ink); color: var(--paper); padding: 8px 12px }
+.b .md p { margin: 0 0 6px }
+.b .md table { border-collapse: collapse; margin: 6px 0; font-size: 12px }
+.b .md td, .b .md th { border-bottom: 1px solid var(--faint); padding: 2px 14px 2px 0; text-align: left; font-weight: 500 }
+.b .md td { font-weight: 400 }
+.b .toolgroup { font-size: 12px; color: var(--dim); border-left: 3px double var(--faint); padding-left: 12px }
+.b .toolgroup .call b { color: var(--ink); font-weight: 500 }
+.b .ask { border: 1px solid var(--ink); background: var(--paper); padding: 12px 14px; box-shadow: 3px 3px 0 var(--carbon) }
+.b .ask .q { font-weight: 500; margin-bottom: 8px }
+.b .ask .opt { padding: 4px 0 }
+.b .ask .opt .box { width: 14px; height: 14px; border: 1px solid var(--ink); flex: none; margin-top: 3px }
+.b .ask .opt.sel .box { background: var(--carbon); border-color: var(--carbon) }
+.b .ask .opt small { display: block; color: var(--dim) }
+.b .composer { margin: 0 28px 18px; border: 1px solid var(--ink); background: var(--paper); padding: 10px 12px }
+.b .cinput { color: var(--faint); padding-bottom: 12px }
+.b .cbtn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--rule); background: none; font: inherit; color: var(--ink) }
+.b .cbtn.agent { border-color: var(--carbon); color: var(--carbon) }
+.b .cbtn.send { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+.b .ctx { width: 8px; height: 26px; border: 1px solid var(--ink) }
+.b .ctx i { background: repeating-linear-gradient(var(--ink) 0 2px, transparent 2px 3px) }
+.b .pop { background: var(--paper); border: 1px solid var(--ink); box-shadow: 3px 3px 0 var(--carbon); width: 300px; padding: 8px 0 }
+.b .pop .h { font-size: 11px; letter-spacing: 1px; color: var(--dim); padding: 0 12px 6px }
+.b .pop .it { display: flex; gap: 8px; padding: 4px 12px; align-items: center }
+.b .pop .it.sel { background: var(--paper2); color: var(--carbon) }
+.b .pop .it small { margin-left: auto; color: var(--dim); font-size: 11px }
+.b .slider { margin: 10px 12px 2px; border-top: 2px solid var(--rule) }
+.b .slider span { color: var(--dim) }
+.b .slider span::before { width: 2px; height: 10px; top: -6px; background: var(--faint) }
+.b .slider span.lit::before { background: var(--ink) }
+.b .slider span.on { color: var(--carbon); font-weight: 500 }
+.b .slider span.on::before { width: 10px; height: 14px; top: -8px; background: var(--carbon) }
+.b .menu { background: var(--paper); border: 1px solid var(--ink); box-shadow: 3px 3px 0 var(--carbon); width: 210px; padding: 4px 0 }
+.b .menu .it { display: flex; gap: 10px; padding: 4px 12px; align-items: center }
+.b .menu .it.sel { background: var(--paper2) }
+.b .menu .it kbd { margin-left: auto; font: inherit; font-size: 11px; color: var(--dim) }
+.b .menu hr { border: 0; border-top: 1px dashed var(--faint); margin: 4px 0 }
+.b .menu .danger { color: #a3271b }
+.b .panel { border-left: 1px solid var(--rule); padding: 18px 16px; gap: 10px }
+.b .ph { font-size: 11px; letter-spacing: 1px; color: var(--dim); border-bottom: 1px solid var(--rule); padding-bottom: 2px }
+.b .swarm .m { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 11px; color: var(--dim) }
+.b .ava { filter: invert(1) contrast(1.1); mix-blend-mode: multiply }
+.b .bg .b2 { display: flex; gap: 8px; padding: 3px 0; font-size: 12px; color: var(--dim); border-bottom: 1px dotted var(--rule) }
+.b .bg .b2 b { color: var(--ink); font-weight: 400 }
+.b .bg pre { margin: 4px 0 0; background: var(--ink); color: var(--paper); padding: 6px 8px; font: 11px/16px "IBM Plex Mono", monospace; white-space: pre-wrap }
+.b .meter { height: 8px; border: 1px solid var(--ink); margin: 6px 0; background: linear-gradient(90deg, var(--ink) 42%, transparent 42%) }
+.b .ctxpop { width: 260px; padding: 10px 12px }
+
+/* =========================================================
+   C · SCOPE — an instrument panel. Amber phosphor on a
+   graticule, every panel is a channel, context is a level.
+   ========================================================= */
+.c { --bg: #0d0a06; --glass: #140f08; --ink: #ffb347; --hot: #ffd89a; --dim: #a5712c; --faint: #4f3712; --grid: #2a1d0b;
+  background: var(--bg); color: var(--ink); font-family: "VT323", monospace; font-size: 19px; line-height: 20px;
+  grid-template-columns: 250px 1fr 250px; gap: 8px; padding: 8px; text-shadow: 0 0 6px rgba(255,179,71,.35) }
+.c .side, .c .main, .c .panel { background: var(--glass); border: 1px solid var(--faint); position: relative }
+.c .main { background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 40px 40px; background-color: var(--glass) }
+.c .ch { display: flex; justify-content: space-between; padding: 2px 10px; background: var(--faint); color: var(--hot); font-size: 17px; text-shadow: none }
+.c .side > *:not(.ch), .c .panel > *:not(.ch) { margin: 8px 10px 0 }
+.c .brand b { font-size: 26px; color: var(--hot) }
+.c .brand small { color: var(--dim) }
+.c .toggle { display: flex; gap: 0; border: 1px solid var(--dim) }
+.c .toggle span { flex: 1; text-align: center; color: var(--dim) }
+.c .toggle .on { background: var(--ink); color: var(--bg); text-shadow: none }
+.c .searchbtn { display: flex; gap: 8px; align-items: center; border: 1px solid var(--dim); padding: 0 8px; color: var(--dim) }
+.c .searchbtn kbd { margin-left: auto; font: inherit }
+.c .tree .dir { color: var(--dim) }
+.c .tree .s { display: flex; gap: 8px; padding: 0 4px; align-items: center }
+.c .tree .s.sel { outline: 1px solid var(--ink); color: var(--hot) }
+.c .tree .s .st { margin-left: auto }
+.c .mhead { display: flex; gap: 16px; padding: 2px 12px; background: var(--faint); color: var(--hot); text-shadow: none }
+.c .transcript { padding: 14px 18px; font-size: 19px }
+.c .msg-user { color: var(--hot); border: 1px solid var(--dim); padding: 2px 10px; background: var(--bg) }
+.c .md p { margin: 0 0 6px }
+.c .md table { border-collapse: collapse }
+.c .md td, .c .md th { border: 1px solid var(--faint); padding: 0 10px; font-weight: 400; text-align: left }
+.c .toolgroup { color: var(--dim) }
+.c .toolgroup .call b { color: var(--ink); font-weight: 400 }
+.c .ask { border: 1px solid var(--ink); background: var(--bg); padding: 8px 12px }
+.c .ask .q { color: var(--hot); margin-bottom: 4px }
+.c .ask .opt.sel { color: var(--bg); background: var(--ink); text-shadow: none }
+.c .ask .opt small { color: var(--dim) }
+.c .ask .opt.sel small { color: var(--glass) }
+.c .composer { border-top: 1px solid var(--faint); padding: 8px 12px; background: var(--bg) }
+.c .cinput { color: var(--dim); padding-bottom: 8px }
+.c .cbtn { display: inline-flex; gap: 6px; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--faint); background: none; color: var(--ink); font: inherit; text-shadow: inherit }
+.c .cbtn.agent { border-color: var(--ink) }
+.c .cbtn.send { background: var(--ink); color: var(--bg); text-shadow: none }
+.c .ctx { width: 10px; height: 24px; border: 1px solid var(--dim); background: repeating-linear-gradient(var(--glass) 0 3px, var(--bg) 3px 4px) }
+.c .ctx i { background: repeating-linear-gradient(var(--ink) 0 3px, transparent 3px 4px); box-shadow: 0 0 6px var(--ink) }
+.c .pop, .c .menu { background: var(--bg); border: 1px solid var(--ink); box-shadow: 0 0 0 1px var(--bg), 0 0 16px rgba(255,179,71,.18); padding: 4px 0 }
+.c .pop { width: 300px }
+.c .pop .h { color: var(--dim); padding: 0 10px }
+.c .pop .it, .c .menu .it { display: flex; gap: 8px; padding: 0 10px; align-items: center }
+.c .pop .it.sel, .c .menu .it.sel { background: var(--ink); color: var(--bg); text-shadow: none }
+.c .pop .it small { margin-left: auto; color: var(--dim) }
+.c .pop .it.sel small { color: var(--glass) }
+.c .slider { margin: 8px 10px; height: 34px; border: 1px solid var(--faint); background: linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / calc(100% / 6) 100% }
+.c .slider span { padding-top: 12px; color: var(--dim); font-size: 15px }
+.c .slider span::before { top: 2px; width: 100%; height: 6px; background: var(--faint) }
+.c .slider span.lit::before { background: var(--ink); box-shadow: 0 0 6px var(--ink) }
+.c .slider span.on { color: var(--hot) }
+.c .slider span.on::before { background: var(--hot) }
+.c .menu { width: 210px }
+.c .menu .it kbd { margin-left: auto; font: inherit; color: var(--dim) }
+.c .menu hr { border: 0; border-top: 1px solid var(--faint); margin: 3px 0 }
+.c .menu .danger { color: #ff7a4a }
+.c .swarm .m { display: flex; flex-direction: column; align-items: center; font-size: 15px; color: var(--dim) }
+.c .ava { filter: sepia(1) saturate(4) hue-rotate(-12deg) brightness(.95) }
+.c .bg .b2 { display: flex; gap: 8px; color: var(--dim) }
+.c .bg .b2 b { color: var(--ink); font-weight: 400 }
+.c .bg pre { margin: 2px 0 0; border: 1px solid var(--faint); padding: 2px 6px; color: var(--dim); font: 15px/16px "VT323", monospace; white-space: pre-wrap }
+.c .meter { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 12px; margin: 6px 0 }
+.c .meter i { background: var(--faint) }
+.c .meter i.f { background: var(--ink); box-shadow: 0 0 4px var(--ink) }
+.c .ctxpop { width: 260px; padding: 6px 10px }
+
+/* =========================================================
+   D · DESK — 1-bit desktop surrealism. Windowed panes with
+   striped title bars on a dithered field, everything 2px.
+   ========================================================= */
+.d { --white: #fff; --black: #000; --gray: #9a9a9a;
+  background: var(--black); color: var(--black); font-family: "Pixelify Sans", "Silkscreen", monospace; font-size: 14px;
+  grid-template-columns: 240px 1fr 230px; gap: 14px; padding: 14px }
+.d .field { position: absolute; inset: 0; z-index: 0; image-rendering: pixelated; width: 100%; height: 100% }
+.d .side, .d .main, .d .panel { position: relative; z-index: 1; background: var(--white); border: 2px solid var(--black); outline: 2px solid var(--white); box-shadow: 6px 6px 0 var(--black) }
+.d .tb { height: 22px; display: flex; align-items: center; gap: 8px; padding: 0 6px; border-bottom: 2px solid var(--black);
+  background: repeating-linear-gradient(var(--white) 0 2px, var(--black) 2px 3px) }
+.d .tb b { background: var(--white); padding: 0 6px; font-family: "Silkscreen", monospace; font-weight: 400; font-size: 12px; margin: 0 auto }
+.d .tb i { width: 12px; height: 12px; border: 2px solid var(--black); background: var(--white) }
+.d .side > *:not(.tb), .d .panel > *:not(.tb) { margin: 10px 10px 0 }
+.d .brand b { font-family: "Silkscreen", monospace; font-size: 18px; font-weight: 400 }
+.d .brand small { color: var(--gray) }
+.d .switch { display: flex; align-items: center; gap: 8px }
+.d .switch .tr { width: 36px; height: 18px; border: 2px solid var(--black); position: relative; background: repeating-conic-gradient(var(--black) 0 25%, var(--white) 0 50%) 0 0 / 4px 4px }
+.d .switch .tr::after { content: ""; position: absolute; top: 0; right: 0; width: 14px; height: 14px; background: var(--black) }
+.d .searchbtn { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 2px solid var(--black); box-shadow: 2px 2px 0 var(--black) }
+.d .searchbtn kbd { margin-left: auto; font: inherit; font-size: 11px; color: var(--gray) }
+.d .tree .dir { font-family: "Silkscreen", monospace; font-size: 11px; color: var(--gray); margin-top: 4px }
+.d .tree .s { display: flex; gap: 8px; padding: 2px 4px; align-items: center }
+.d .tree .s.sel { background: var(--black); color: var(--white) }
+.d .tree .s .st { margin-left: auto }
+.d .transcript { padding: 14px 18px; font-family: "JetBrains Mono", monospace; font-size: 13px }
+.d .msg-user { background: var(--black); color: var(--white); padding: 6px 10px; box-shadow: 3px 3px 0 var(--gray) }
+.d .md p { margin: 0 0 6px }
+.d .md table { border-collapse: collapse; border: 2px solid var(--black) }
+.d .md td, .d .md th { border: 1px solid var(--black); padding: 1px 10px; text-align: left; font-weight: 600 }
+.d .md td { font-weight: 400 }
+.d .toolgroup { border: 2px dotted var(--black); padding: 6px 10px; font-size: 12px }
+.d .ask { border: 2px solid var(--black); padding: 10px 12px; box-shadow: 4px 4px 0 var(--black) }
+.d .ask .q { font-family: "Pixelify Sans", monospace; font-size: 15px; margin-bottom: 6px }
+.d .ask .opt { padding: 3px 4px }
+.d .ask .opt .box { width: 14px; height: 14px; border: 2px solid var(--black); flex: none; margin-top: 2px; border-radius: 50% }
+.d .ask .opt.sel .box { background: radial-gradient(var(--black) 40%, var(--white) 45%) }
+.d .ask .opt small { display: block; color: #555 }
+.d .composer { border-top: 2px solid var(--black); padding: 8px 12px; font-family: "JetBrains Mono", monospace }
+.d .cinput { color: var(--gray); padding-bottom: 10px }
+.d .cbtn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 2px solid var(--black); background: var(--white); font: 12px "JetBrains Mono", monospace }
+.d .cbtn.agent { background: var(--black); color: var(--white) }
+.d .cbtn.send { background: var(--black); color: var(--white); box-shadow: 2px 2px 0 var(--gray) }
+.d .ctx { width: 10px; height: 24px; border: 2px solid var(--black); background: repeating-conic-gradient(var(--black) 0 25%, var(--white) 0 50%) 0 0 / 2px 2px }
+.d .ctx i { background: var(--black) }
+.d .pop, .d .menu { background: var(--white); border: 2px solid var(--black); box-shadow: 4px 4px 0 var(--black); padding: 4px 0 }
+.d .pop { width: 290px; font-family: "JetBrains Mono", monospace; font-size: 12px }
+.d .pop .h { font-family: "Silkscreen", monospace; color: var(--gray); padding: 0 10px 4px; font-size: 11px }
+.d .pop .it, .d .menu .it { display: flex; align-items: center; gap: 8px; padding: 2px 10px }
+.d .pop .it.sel, .d .menu .it.sel { background: var(--black); color: var(--white) }
+.d .pop .it small { margin-left: auto; color: var(--gray) }
+.d .slider { margin: 8px 10px 2px; height: 30px }
+.d .slider::before { content: ""; position: absolute; left: 8%; right: 8%; top: 5px; height: 4px; background: repeating-conic-gradient(var(--black) 0 25%, var(--white) 0 50%) 0 0 / 2px 2px; border: 1px solid var(--black) }
+.d .slider span { color: var(--gray); font-size: 10px }
+.d .slider span::before { display: none }
+.d .slider span.on { color: var(--black) }
+.d .slider span.on::before { display: block; width: 12px; height: 16px; top: -2px; background: var(--white); border: 2px solid var(--black); box-shadow: 2px 2px 0 var(--black) }
+.d .menu { width: 210px; font-family: "JetBrains Mono", monospace; font-size: 12px }
+.d .menu .it kbd { margin-left: auto; font: inherit; color: var(--gray) }
+.d .menu .it.sel kbd { color: var(--white) }
+.d .menu hr { border: 0; border-top: 2px dotted var(--black); margin: 4px 0 }
+.d .swarm .m { display: flex; flex-direction: column; align-items: center; font-size: 11px }
+.d .ava { outline: 2px solid var(--black); filter: invert(1) }
+.d .bg .b2 { display: flex; gap: 8px; font: 12px "JetBrains Mono", monospace; padding: 2px 0 }
+.d .bg pre { margin: 2px 0 0; background: var(--black); color: var(--white); padding: 4px 6px; font: 11px/15px "JetBrains Mono", monospace; white-space: pre-wrap }
+.d .meter { height: 10px; border: 2px solid var(--black); margin: 6px 0; background: linear-gradient(90deg, var(--black) 42%, transparent 42%) }
+.d .ctxpop { width: 250px; padding: 8px 10px; font-family: "JetBrains Mono", monospace; font-size: 12px }
+
+/* icon sheet */
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1px; background: var(--page-line); border: 1px solid var(--page-line) }
+.sheet div { background: var(--page); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 8px; font-size: 11px; color: var(--page-dim) }
+.sheet svg { width: 32px; height: 32px; shape-rendering: crispEdges; fill: var(--page-ink) }
+.notes { color: var(--page-dim); font-size: 12px; max-width: 80ch }
+.notes b { color: var(--page-ink); font-weight: 600 }
+@media (prefers-reduced-motion: reduce) { .a .cinput::after { animation: none } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Raster — four directions</h1>
+    <p>Same screen in every direction: the code agent mid-task, a tool group, an inline question, the model popover anchored to its button, the context popup over the context bar, and a right-click menu on a session. All copy in English. Pick one, or mix parts.</p>
+  </header>
+  <div id="dirs"></div>
+  <section class="dir">
+    <div class="dir-head"><div><h2>Icon set</h2><div class="tag">12×12 pixel bitmaps, drawn as crisp rects, inherit text color</div></div>
+      <p class="notes">Same bitmaps feed every direction and become <b>rune Pixels</b> in the app, so they never depend on a font having the glyph (the broken context menu came from font fallback).</p></div>
+    <div class="sheet" id="sheet"></div>
+  </section>
+</div>
+
+<script>
+// 12x12 bitmaps, '#' = ink
+const ICONS = {
+  open: ["............","..########..","..#......#..","..#......#..","..#..##..#..","..#..###.#..","..#..####...","..#..##.....","..#.........","..#####.....","............","............"],
+  stop: ["............","............","..########..","..########..","..##....##..","..##....##..","..##....##..","..##....##..","..########..","..########..","............","............"],
+  trash: ["....####....","..########..","............","...######...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...######...","............","............"],
+  copy: ["............","....######..","....#....#..","..######.#..","..#....#.#..","..#....#.#..","..#....###..","..#....#....","..######....","............","............","............"],
+  rename: ["............","..........#.",".........###","........###.",".......###..","......###...",".....###....","....###.....","....##......","..######....","............","............"],
+  plus: ["............",".....##.....",".....##.....",".....##.....",".....##.....","..########..","..########..",".....##.....",".....##.....",".....##.....",".....##.....","............"],
+  search: ["............","...####.....","..#....#....",".#......#...",".#......#...",".#......#...","..#....#....","...#####....",".......##...","........##..",".........##.","............"],
+  chat: ["............",".##########.",".#........#.",".#.##.###.#.",".#........#.",".#.####...#.",".#........#.",".####.#####.","....#.#.....","....##......","............","............"],
+  code: ["............","............","...#....#...","..#....#....",".#....#.....","#.....#.....",".#...#......","..#..#......","...##.......","............","............","............"],
+  find: ["............","....###.....","...#...#....","..#.#...#...","..#.....#...","..#.....#...","...#...#....","....####....","......##....",".......##...","........#...","............"],
+  test: ["............","..........#.",".........##.","........##..","#......##...","##....##....",".##..##.....","..####......","...##.......","............","............","............"],
+  gear: ["............",".....##.....","..#.####.#..","...######...","..###..###..",".###....###.",".###....###.","..###..###..","...######...","..#.####.#..",".....##.....","............"],
+  folder: ["............","............",".####.......",".#...#####..",".#........#.",".##########.",".#........#.",".#........#.",".#........#.",".##########.","............","............"],
+  attach: ["............","......###...",".....#...#..","....#.##.#..","...#.#.#.#..","..#.#.#.#...","..#.#.#.....","..#..#......","...##.......","............","............","............"],
+  plug: ["............","...#...#....","...#...#....","..#######...","..#.....#...","..#.....#...","...#...#....","....###.....",".....#......",".....#......",".....##.....","............"],
+  brain: ["............","...##.##....","..#..#..#...",".#...#...#..",".#.#.#.#.#..",".#...#...#..","..#..#..#...","...#.#.#....","....###.....",".....#......","............","............"],
+  provA: ["............",".....#......",".....#......","..#..#..#...","...#.#.#....","....###.....","#####.#####.","....###.....","...#.#.#....","..#..#..#...",".....#......",".....#......"],
+  provO: ["............","....####....","..##....##..",".#..####..#.",".#.#....#.#.","#.#......#.#","#.#......#.#",".#.#....#.#.",".#..####..#.","..##....##..","....####....","............"],
+  send: ["............",".....##.....","....####....","...######...","..##.##.##..",".....##.....",".....##.....",".....##.....",".....##.....",".....##.....","............","............"],
+  abort: ["............","............","...######...","...######...","...######...","...######...","...######...","...######...","............","............","............","............"],
+  dot: ["............","............","............","............","....####....","....####....","....####....","....####....","............","............","............","............"],
+  ask: ["............","...######...","..##....##..","........##..",".......##...","......##....",".....##.....",".....##.....","............",".....##.....",".....##.....","............"],
+  swarm: ["............","..##....##..",".####..####.","..##....##..","............",".....##.....","....####....",".....##.....","............","..##....##..",".####..####.","............"],
+  term: ["............",".##########.",".#........#.",".#.#......#.",".#..#.....#.",".#.#......#.",".#....###.#.",".#........#.",".##########.","............","............","............"],
+  ctx: ["............","....####....","....#..#....","....#..#....","....#..#....","....####....","....####....","....####....","....####....","....####....","............","............"],
+};
+const svg = (n, cls = "i") => {
+  const g = ICONS[n]; let r = "";
+  g.forEach((row, y) => { for (let x = 0; x < 12; x++) if (row[x] === "#") r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; });
+  return `<svg class="${cls}" viewBox="0 0 12 12" aria-hidden="true">${r}</svg>`;
+};
+const BRAILLE = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+
+// 8x8 mirrored identicon on a canvas, as the app does
+function avatar(seed) {
+  const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d");
+  let h = seed >>> 0; const rnd = () => (h = (h * 1103515245 + 12345) >>> 0) / 4294967296;
+  x.fillStyle = "#000"; x.fillRect(0, 0, 8, 8); x.fillStyle = "#fff";
+  for (let yy = 0; yy < 8; yy++) for (let xx = 0; xx < 4; xx++) if (rnd() > .52) { x.fillRect(xx, yy, 1, 1); x.fillRect(7 - xx, yy, 1, 1); }
+  return c.toDataURL();
+}
+
+const sessions = [
+  { dir: "raster", items: [["code", "compose popovers", "⠹", true], ["test", "e2e: login flow", "?"], ["chat", "naming notes", ""]] },
+  { dir: "ncrm", items: [["code", "webhook retries", "⠼"], ["find", "sqlite wal limits", ""]] },
+];
+const agentIcon = { code: "code", test: "test", chat: "chat", find: "find" };
+
+function frame(k) {
+  const brand = `<div class="brand"><b>RASTER</b><small>v0.2.0</small></div>`;
+  const filter = k === "a" ? `<div class="seg"><span>active</span><span class="on">all</span></div>`
+    : k === "c" ? `<div class="toggle"><span>ACTIVE</span><span class="on">ALL</span></div>`
+    : `<div class="switch"><span class="tr"></span><span>show <b>all</b> sessions</span></div>`;
+  const search = `<div class="searchbtn">${svg("search")}<span>Search</span><kbd>Ctrl K</kbd></div>`;
+  const newS = `<div class="row">${svg("plus")}<span>New session</span><span class="grow"></span><span style="opacity:.55">Ctrl N</span></div>`;
+  const tree = `<div class="tree">${sessions.map(g => `<div class="dir">${k === "a" ? "▾ " : ""}${g.dir}</div>${g.items.map(([ag, t, st, sel]) =>
+    `<div class="s${sel ? " sel" : ""}">${svg(agentIcon[ag])}<span class="trunc grow">${t}</span><span class="st">${st}</span></div>`).join("")}`).join("")}</div>`;
+  const sideInner = k === "a"
+    ? `<div class="box"><b>raster</b>${brand}</div><div class="box"><b>sessions</b><div style="display:flex;flex-direction:column;gap:8px">${newS}${search}${filter}${tree}</div></div>`
+    : `${k === "d" ? `<div class="tb"><i></i><b>Sessions</b></div>` : k === "c" ? `<div class="ch"><span>CH1 SESSIONS</span><span>5</span></div>` : ""}${brand}${newS}${search}${filter}${tree}
+       <div class="grow"></div><div class="row" style="margin-bottom:12px;opacity:.7">${svg("gear")}<span>Settings</span></div>`;
+
+  const head = k === "d" ? `<div class="tb"><i></i><b>compose popovers — code</b></div>`
+    : `<div class="mhead">${svg("code")}<b>compose popovers</b><span>~/projects/raster</span><span class="grow"></span><span>code · Opus 5.5</span></div>`;
+  const transcript = `<div class="transcript">
+    <div class="msg-user">The model and context popovers open in the middle of the chat. Anchor them to their buttons.</div>
+    <div class="md"><p>The popovers render inside the transcript column, so they center on it. I'll lift them into an overlay layer positioned from the button's rect.</p>
+      <table><tr><th>popover</th><th>anchor</th><th>opens</th></tr><tr><td>model · effort</td><td>composer button</td><td>above, left-aligned</td></tr><tr><td>context</td><td>context bar</td><td>above, right-aligned</td></tr><tr><td>agent</td><td>agent button</td><td>above, left-aligned</td></tr></table></div>
+    <div class="toolgroup"><div class="call">${svg("term")}<b>bash</b><span>rg -n "Popover::" src/ui</span><span class="grow"></span><span>✓</span></div>
+      <div class="call">${svg("open")}<b>read</b><span>src/ui/composer.rs</span><span class="grow"></span><span>✓</span></div>
+      <div class="call">${svg("term")}<b>bash</b><span>cargo check</span><span class="grow"></span><span>${BRAILLE[3]}</span></div></div>
+    <div class="ask"><div class="q">${k === "d" ? "" : "? "}Where should the effort control live?</div>
+      <div class="opt sel">${k === "b" || k === "d" ? `<span class="box"></span>` : `<span>${k === "a" ? "(•)" : "[x]"}</span>`}<div>Inside the model popover<small> — one place for model and effort</small></div></div>
+      <div class="opt">${k === "b" || k === "d" ? `<span class="box"></span>` : `<span>${k === "a" ? "( )" : "[ ]"}</span>`}<div>Its own popover<small> — opened from the effort label</small></div></div></div>
+  </div>`;
+  const composer = `<div class="composer"><div class="cinput">Message code…</div>
+    <div class="cbar">
+      <button class="cbtn" title="Attach or mention">${svg("plus")}</button>
+      <button class="cbtn agent" title="Agent">${svg("code")}<span>code</span></button>
+      <button class="cbtn" title="Model and effort">${svg("provA")}<span>Opus 5.5 · high</span></button>
+      <span class="grow"></span>
+      <span class="ctx" title="Context 84k of 200k"><i></i></span>
+      <button class="cbtn send" title="Send">${svg("send")}</button>
+    </div></div>`;
+
+  const efforts = ["off", "minimal", "low", "medium", "high", "xhigh"];
+  const modelPop = `<div class="pop" style="left:${k === "b" ? 120 : 104}px;bottom:${k === "b" ? 72 : 52}px">
+    <div class="h">${k === "c" ? "MODEL" : "Model"} <span style="opacity:.6">· connected providers only</span></div>
+    ${[["Opus 5.5", "anthropic", 1], ["Sonnet 5.5", "anthropic"], ["Haiku 5.5", "anthropic"], ["GPT-6.1 Sol", "codex"]].map(([n, p, s]) =>
+      `<div class="it${s ? " sel" : ""}">${svg(p === "codex" ? "provO" : "provA")}<span>${n}</span><small>${p}</small></div>`).join("")}
+    <div class="h" style="padding-top:8px">${k === "c" ? "EFFORT" : "Effort"}</div>
+    <div class="slider">${efforts.map((e, i) => `<span class="${i < 4 ? "lit" : ""}${i === 4 ? " on lit" : ""}">${e}</span>`).join("")}</div>
+  </div>`;
+  const filled = 17;
+  const ctxPop = `<div class="pop ctxpop" style="right:${k === "b" ? 26 : 12}px;bottom:${k === "b" ? 72 : 52}px">CTX</div>`;
+  const ctxBody = `<div class="row">${svg("ctx")}<b style="font-weight:inherit">Context</b><span class="grow"></span><span>84k / 200k</span></div>
+    ${k === "a" || k === "c" ? `<div class="meter">${Array.from({ length: k === "a" ? 40 : 24 }, (_, i) => `<i class="${i < (k === "a" ? filled : 10) ? "f" : ""}"></i>`).join("")}</div>` : `<div class="meter"></div>`}
+    <div class="row"><span class="grow">system + tools</span><span>18k</span></div>
+    <div class="row"><span class="grow">messages</span><span>61k</span></div>
+    <div class="row"><span class="grow">compressed (2 blocks)</span><span>5k</span></div>
+    <div class="row" style="margin-top:6px;opacity:.7">Compress older turns</div>`;
+
+  const menu = `<div class="menu" style="left:${k === "a" ? 170 : k === "b" ? 250 : k === "c" ? 170 : 160}px;top:${k === "a" ? 196 : k === "b" ? 262 : k === "c" ? 214 : 258}px">
+    ${[["open", "Open", "Enter", 1], ["rename", "Rename", "F2"], ["copy", "Copy title", "Ctrl C"], ["folder", "Reveal folder", ""], null, ["stop", "End session", "Ctrl W"], ["trash", "Remove from list", "Del", 0, 1]].map(m =>
+      m ? `<div class="it${m[3] ? " sel" : ""}${m[4] ? " danger" : ""}">${svg(m[0])}<span>${m[1]}</span><kbd>${m[2]}</kbd></div>` : "<hr>").join("")}
+  </div>`;
+
+  const subs = [["s1", "explore", "thinking", "⠹"], ["s2", "test", "tool", "⚒"], ["s3", "search", "idle", "·"]];
+  const panel = `${k === "d" ? `<div class="tb"><i></i><b>Swarm</b></div>` : k === "c" ? `<div class="ch"><span>CH2 SWARM</span><span>3</span></div>` : k === "a" ? "" : `<div class="ph">Swarm</div>`}
+    ${k === "a" ? `<div class="box"><b>swarm</b>` : ""}<div class="swarm">${subs.map(([id, l, w, m], i) =>
+      `<div class="m"><img class="ava" src="${avatar(i * 97 + 13)}" alt=""><span>${m} ${w}</span><span style="opacity:.75">${l}</span></div>`).join("")}</div>${k === "a" ? "</div>" : ""}
+    ${k === "d" ? `<div class="tb" style="margin:14px 0 0"><i></i><b>Background</b></div>` : k === "c" ? `<div class="ch" style="margin:12px 0 0"><span>CH3 JOBS</span><span>2</span></div>` : k === "a" ? "" : `<div class="ph" style="margin-top:12px">Background</div>`}
+    ${k === "a" ? `<div class="box"><b>background</b>` : ""}<div class="bg">
+      <div class="${k === "a" ? "b" : "b2"}"><span>${BRAILLE[5]}</span><b class="grow trunc">cargo check</b></div>
+      <pre>Checking rune v0.4.0
+Checking raster v0.2.0
+warning: unused import</pre>
+      <div class="${k === "a" ? "b" : "b2"}" style="margin-top:6px"><span>✓</span><b class="grow trunc">rg -n "Popover::" src/ui</b></div>
+    </div>${k === "a" ? "</div>" : ""}`;
+
+  return `<div class="app ${k}">
+    ${k === "d" ? `<canvas class="field" width="300" height="170"></canvas>` : ""}
+    ${k === "b" ? `<div class="feed">${"<i></i>".repeat(14)}</div>` : ""}
+    <aside class="side">${sideInner}</aside>
+    <main class="main" style="position:relative">${head}${transcript}${composer}${modelPop}${ctxPop.replace("CTX", ctxBody)}</main>
+    <aside class="panel">${panel}</aside>
+    ${menu}
+  </div>`;
+}
+
+const DIRS = [
+  ["a", "A · Box", "a real TUI drawn with a GPU",
+    { Character: "terse, exact, keyboard-first", World: "a terminal at night: box-drawing, inverse video, one blinking block", Moment: "the swarm avatars and the braille spinners, the only things that move", Signature: "inverse-video selection everywhere, including menus and the effort slider" }],
+  ["b", "B · Ledger", "continuous-feed paper, light theme",
+    { Character: "calm, archival, a little dry", World: "tractor-feed printouts, carbon copies, ledger rules", Moment: "the transcript as a printout on green-bar paper; questions stamped in carbon blue", Signature: "the perforated feed edge, and carbon-blue as the only color" }],
+  ["c", "C · Scope", "an instrument panel in amber phosphor",
+    { Character: "alert, technical, live", World: "oscilloscopes and night-shift instruments: graticule, channels, level meters", Moment: "context as a segmented level meter; the swarm as channels on the bench", Signature: "every pane is a labeled channel (CH1, CH2…) with a count" }],
+  ["d", "D · Desk", "1-bit desktop surrealism on a dithered field",
+    { Character: "playful, uncanny, handmade", World: "a 1-bit desktop floating in a dithered dreamscape", Moment: "the animated Bayer field behind the windows, the current Raster idea pushed further", Signature: "striped title bars and hard 6px drop shadows on every window" }],
+];
+
+document.getElementById("dirs").innerHTML = DIRS.map(([k, name, tag, d]) => `<section class="dir" style="margin-bottom:56px">
+  <div class="dir-head"><div><h2>${name}</h2><div class="tag">${tag}</div></div>
+  <dl>${Object.entries(d).map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl></div>
+  <div class="scroller">${frame(k)}</div></section>`).join("");
+
+document.getElementById("sheet").innerHTML = Object.keys(ICONS).map(n => `<div>${svg(n, "")}<span>${n}</span></div>`).join("");
+
+// dithered field for D (Bayer 8x8 over moving light)
+const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+const field = document.querySelector(".d .field");
+if (field) {
+  const g = field.getContext("2d"), W = field.width, H = field.height, img = g.createImageData(W, H);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const draw = t => {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const a = Math.exp(-(((x - W * (.3 + .1 * Math.sin(t / 3000))) ** 2) + ((y - H * .4) ** 2)) / 2600);
+      const b = Math.exp(-(((x - W * .78) ** 2) + ((y - H * (.7 + .1 * Math.cos(t / 3700))) ** 2)) / 1800);
+      const v = Math.min(1, a + b * .8) * 64, o = (y * W + x) * 4, on = v > B8[(y & 7) * 8 + (x & 7)] ? 255 : 0;
+      img.data[o] = img.data[o + 1] = img.data[o + 2] = on; img.data[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    if (!reduce) setTimeout(() => requestAnimationFrame(draw), 120);
+  };
+  requestAnimationFrame(draw);
+}
+</script>
