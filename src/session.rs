@@ -278,8 +278,11 @@ impl Session {
 
     fn on_message(&mut self, v: &Value, end: bool) {
         let m = &v["message"];
-        if m["role"] == "user" && end && m["attribution"] != "user" {
-            self.on_injected(&flat_text(&m["content"]));
+        if m["role"] == "user" && end {
+            let t = flat_text(&m["content"]);
+            if is_injected(&t) {
+                self.on_injected(&t);
+            }
             return;
         }
         if m["role"] != "assistant" {
@@ -380,6 +383,11 @@ impl Session {
     }
 }
 
+/// Avisos que a extensão dsh entrega como mensagem de usuário (texto fixo do dsh).
+fn is_injected(t: &str) -> bool {
+    t.starts_with("Background subagent ") || (t.starts_with("Agent ") && t.contains(" sent a message:")) || t.starts_with("Continue working toward the active goal")
+}
+
 fn flat_text(c: &Value) -> String {
     if let Some(s) = c.as_str() {
         return s.to_string();
@@ -408,4 +416,64 @@ fn result_text(r: &Value) -> String {
     }
     let n = out.chars().count();
     if n > 4000 { out.chars().skip(n - 4000).collect() } else { out }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sess() -> Session {
+        Session::new(1, Agent::Code, "/tmp".into())
+    }
+
+    #[test]
+    fn streaming_assistant_text_updates_one_item_then_settles() {
+        let mut s = sess();
+        s.on_frame(json!({"type": "agent_start"}));
+        let msg = |t: &str| json!({"role": "assistant", "content": [{"type": "text", "text": t}]});
+        s.on_frame(json!({"type": "message_update", "messageId": "m1", "message": msg("Ol")}));
+        s.on_frame(json!({"type": "message_end", "messageId": "m1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Olá"}], "usage": {"input": 10, "output": 5}}}));
+        s.on_frame(json!({"type": "agent_end"}));
+        assert_eq!(s.items.len(), 1);
+        assert!(matches!(&s.items[0], Item::Assistant { text, streaming: false, .. } if text == "Olá"));
+        assert_eq!(s.status, Status::Idle);
+        assert_eq!(s.ctx_tokens, 15);
+    }
+
+    #[test]
+    fn tool_calls_group_and_subagent_goes_from_working_to_idle() {
+        let mut s = sess();
+        s.on_frame(json!({"type": "tool_execution_start", "toolCallId": "t1", "toolName": "subagent", "args": {"description": "contar arquivos"}}));
+        s.on_frame(json!({"type": "tool_execution_start", "toolCallId": "t2", "toolName": "bash", "args": {"command": "ls"}}));
+        s.on_frame(json!({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "subagent", "result": {"content": [{"type": "text", "text": "started subagent abc-1"}]}}));
+        assert!(matches!(&s.items[0], Item::Tools { calls, .. } if calls.len() == 2 && calls[0].done && !calls[1].done));
+        assert_eq!(s.subs.len(), 1);
+        assert_eq!(s.subs[0].label, "contar arquivos");
+        assert_eq!(s.subs[0].status, SubStatus::Working);
+        let user = |t: &str| json!({"type": "message_end", "message": {"role": "user", "attribution": "user", "content": [{"type": "text", "text": t}]}});
+        s.on_frame(user("Agent abc-1 sent a message: 12"));
+        s.on_frame(user("Background subagent abc-1 finished and will do no further work unless you send it more."));
+        assert_eq!(s.subs[0].status, SubStatus::Idle);
+        s.on_frame(user("pergunta normal"));
+        assert_eq!(s.items.iter().filter(|i| matches!(i, Item::Notice(_))).count(), 2);
+    }
+
+    #[test]
+    fn ask_request_sets_asking_and_cancel_closes_it() {
+        let mut s = sess();
+        s.on_frame(json!({"type": "extension_ui_request", "id": "u1", "method": "ask", "questions": [
+            {"id": "q", "question": "qual?", "options": [{"label": "a"}, {"label": "b", "description": "bê"}], "recommended": 1}
+        ]}));
+        assert_eq!(s.status, Status::Asking);
+        assert!(matches!(&s.items[0], Item::Ask { kind: AskKind::Ask(qs), answer: None, .. } if qs[0].picked == vec![1] && qs[0].options[1].1 == "bê"));
+        s.on_frame(json!({"type": "extension_ui_request", "id": "u2", "method": "cancel", "targetId": "u1"}));
+        assert!(matches!(&s.items[0], Item::Ask { answer: Some(_), .. }));
+    }
+
+    #[test]
+    fn error_prompt_result_becomes_error_item() {
+        let mut s = sess();
+        s.on_frame(json!({"type": "prompt_result", "status": "error", "error": {"message": "401", "retryable": false}}));
+        assert!(matches!(&s.items[0], Item::Error(m) if m == "401"));
+    }
 }

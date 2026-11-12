@@ -72,8 +72,7 @@ pub struct State {
 
 impl State {
     fn new() -> State {
-        let cwd = std::env::args().skip(1).find(|a| !a.starts_with('-')).map(PathBuf::from)
-            .or_else(|| std::env::current_dir().ok()).unwrap_or_else(|| PathBuf::from("."));
+        let cwd = launch_dir();
         let mut s = State {
             sessions: Vec::new(),
             current: None,
@@ -234,7 +233,53 @@ fn setup(s: &mut State, waker: rune::Waker) {
     ui::dither::animate(s.bg.clone(), 960, 600);
 }
 
+/// Pasta do projeto: o último argumento que é um diretório existente, senão a pasta atual.
+fn launch_dir() -> PathBuf {
+    let arg = std::env::args().skip(1).filter(|a| !a.starts_with('-')).map(PathBuf::from).filter(|p| p.is_dir()).last();
+    let dir = arg.or_else(|| std::env::current_dir().ok()).unwrap_or_else(|| PathBuf::from("."));
+    dir.canonicalize().unwrap_or(dir)
+}
+
+/// `raster --probe "mensagem" [--agent search]`: sobe uma sessão sem UI, manda a mensagem e imprime a
+/// transcrição quando ela termina. Teste ponta a ponta do runtime.
+fn probe(msg: String) -> ! {
+    let args: Vec<String> = std::env::args().collect();
+    let agent = args.windows(2).find(|w| w[0] == "--agent").and_then(|w| agents::ALL.iter().copied().find(|a| a.name() == w[1])).unwrap_or(Agent::Search);
+    let inbox = omp::Inbox::default();
+    let waker: omp::Waker = std::sync::Arc::new(|| {});
+    let mut sess = Session::new(0, agent, launch_dir());
+    sess.thinking = "low".into();
+    sess.prompt(msg, &inbox, &waker);
+    let t0 = std::time::Instant::now();
+    let mut saw_work = false;
+    while t0.elapsed().as_secs() < 300 {
+        for (_, ev) in inbox.drain() {
+            match ev {
+                omp::Ev::Frame(v) => sess.on_frame(v),
+                omp::Ev::Exited => sess.on_exit(),
+            }
+        }
+        saw_work |= sess.status == Status::Working;
+        let subs_busy = sess.subs.iter().any(|x| x.status == session::SubStatus::Working);
+        if saw_work && (matches!(sess.status, Status::Stopped | Status::Asking) || (sess.status == Status::Idle && !subs_busy)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    for it in &sess.items {
+        println!("{}", ui::transcript::item_text(it));
+    }
+    println!("[status {:?}, subs {}, ctx {}]", sess.status, sess.subs.len(), sess.ctx_tokens);
+    let ok = saw_work && sess.status == Status::Idle;
+    sess.stop();
+    std::process::exit(if ok { 0 } else { 1 });
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--probe") {
+        probe(args.get(i + 1).cloned().unwrap_or_default());
+    }
     rune::run(AppSpec::<State> {
         fonts: &[
             include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
