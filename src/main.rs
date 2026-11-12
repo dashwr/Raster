@@ -347,7 +347,7 @@ fn setup(s: &mut State, waker: rune::Waker) {
     s.waker = Some(waker);
     s.sync_prefs();
     ui::dither::animate(s.bg.clone(), 640, 400, s.fps.clone());
-    ui::dither::animate_aurora(s.aurora.clone(), 960, 720, s.aurora_on.clone());
+    ui::dither::animate_aurora(s.aurora.clone(), 320, 240, s.aurora_on.clone());
     s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
 

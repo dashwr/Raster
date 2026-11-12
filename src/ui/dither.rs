@@ -64,8 +64,8 @@ pub fn animate(px: Pixels, w: u32, h: u32, fps: std::sync::Arc<std::sync::atomic
     });
 }
 
-/// Aurora: cortinas que ondulam na horizontal, com raios verticais, em dither Bayer cinza sobre
-/// transparente. Fraca de propósito: fica atrás do texto.
+/// Aurora: cortinas que ondulam na horizontal, com raios verticais, em blocos de cinza com alfa
+/// em poucos degraus (pixelada, sem dither). Fraca de propósito: fica atrás do texto.
 pub fn aurora(w: u32, h: u32, cell: u32, t: f32, out: &mut Vec<u8>) {
     out.clear();
     out.resize((w * h * 4) as usize, 0);
@@ -87,31 +87,31 @@ pub fn aurora(w: u32, h: u32, cell: u32, t: f32, out: &mut Vec<u8>) {
                 let k = if d > 0.0 { (-(d * d) / 0.002).exp() } else { (d / 0.18).exp() };
                 l += k * rays * [0.55, 0.4, 0.3][i];
             }
-            let l = (l * (0.85 + 0.15 * (t * 0.7).sin())).clamp(0.0, 0.9);
-            let th = (BAYER[(gy % 8) as usize][(gx % 8) as usize] as f32 + 0.5) / 64.0;
-            if l <= th {
+            let l = (l * (0.85 + 0.15 * (t * 0.7).sin())).clamp(0.0, 1.0);
+            let a = ((l * 6.0).floor() / 6.0 * 200.0) as u8;
+            if a == 0 {
                 continue;
             }
             for y in gy * cell..((gy + 1) * cell).min(h) {
                 for x in gx * cell..((gx + 1) * cell).min(w) {
                     let i = ((y * w + x) * 4) as usize;
-                    out[i..i + 4].copy_from_slice(&[150, 150, 150, 255]);
+                    out[i..i + 4].copy_from_slice(&[170, 170, 170, a]);
                 }
             }
         }
     }
 }
 
-/// Anima a aurora a ~15 fps enquanto `on` estiver ligado; parada não gasta CPU.
+/// Anima a aurora a ~10 fps enquanto `on` estiver ligado; parada não gasta CPU.
 pub fn animate_aurora(px: Pixels, w: u32, h: u32, on: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     std::thread::spawn(move || {
         let start = std::time::Instant::now();
         let mut buf = Vec::new();
         loop {
             if on.load(std::sync::atomic::Ordering::Relaxed) {
-                aurora(w, h, 3, start.elapsed().as_secs_f32(), &mut buf);
+                aurora(w, h, 2, start.elapsed().as_secs_f32(), &mut buf);
                 px.set(w, h, buf.clone());
-                std::thread::sleep(std::time::Duration::from_millis(66));
+                std::thread::sleep(std::time::Duration::from_millis(100));
             } else {
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
@@ -131,11 +131,12 @@ mod tests {
     }
 
     #[test]
-    fn aurora_is_sparse_gray_on_transparent() {
+    fn aurora_is_gray_steps_on_transparent() {
         let mut buf = Vec::new();
         super::aurora(200, 120, 4, 3.0, &mut buf);
-        let lit = buf.chunks(4).filter(|p| p[3] == 255).count();
-        assert!(lit > 0 && lit < 200 * 120 / 2);
-        assert!(buf.chunks(4).all(|p| p[3] == 0 || p[0] == 150));
+        let lit = buf.chunks(4).filter(|p| p[3] > 0).count();
+        assert!(lit > 0);
+        assert!(buf.chunks(4).all(|p| p[3] == 0 || p[0] == 170));
+        assert!(buf.chunks(4).all(|p| p[3] <= 200));
     }
 }

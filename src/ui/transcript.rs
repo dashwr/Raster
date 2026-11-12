@@ -78,7 +78,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
         .child(header(sess, &dec))
         .child(super::float(el().key("tx-frame").grow(1.0).min_h(0.0).w_full())
             .child(el().key("aurora").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.aurora, rune::SurfaceFit::Fill)
-                .opacity(if sess.status == Status::Working { 0.35 } else { 0.0 }).opacity_motion(rune::Spring::new(0.8, 0.0)))
+                .opacity(if sess.status == Status::Working { 0.25 } else { 0.0 }).opacity_motion(rune::Spring::new(0.8, 0.0)))
             .child(col().key(format!("scroll-{sid}")).w_full().h_full().child(list).scroll(rune::ScrollSpec { stick_bottom: true })))
 }
 
