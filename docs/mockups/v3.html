@@ -123,6 +123,31 @@ pre.out { margin: 0; border: 1px dotted var(--dim); padding: 4px 6px; color: var
 .app.amber pre.out { font: 15px/16px var(--font) }
 .braille { display: inline-block; width: 7px; height: 13px; flex: none }
 .braille svg { width: 7px; height: 13px; display: block; fill: currentColor; shape-rendering: crispEdges }
+
+/* ---------- float: detached panes on a dithered field ---------- */
+.app.float { grid-template-columns: 236px 1fr 196px; gap: 18px; padding: 18px; background: #000 }
+.app.float .field { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 0; opacity: .55 }
+.app.float .side, .app.float .main, .app.float .panel { z-index: 1; background: var(--bg); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink) }
+.app.float .panel { align-self: start; padding-bottom: 12px }
+.app.float .main { border-left: 1px solid var(--ink); border-right: 1px solid var(--ink); background: transparent; border: 0; box-shadow: none }
+.app.float .mhead { background: var(--bg); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); margin-bottom: 14px }
+.app.float .transcript { background: var(--bg); border: 1px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); padding: 18px 22px; margin-bottom: 14px }
+.app.float .u { background: var(--ink); color: var(--bg); border-color: var(--ink); box-shadow: 4px 4px 0 var(--dim) }
+.app.float .ask { padding: 0 0 8px }
+.app.float .ask > div:first-child { background: repeating-conic-gradient(var(--faint) 0 25%, transparent 0 50%) 0 0 / 2px 2px; border-bottom: 1px solid var(--ink); padding: 4px 12px; margin-bottom: 4px }
+.app.float .ask .opt { margin: 0 8px }
+.app.float .composer { background: var(--bg); border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink) }
+.app.float .logo { font-size: 22px; padding: 16px 14px 4px }
+.app.float .frame { border-style: dotted }
+.app.float .menu, .app.float .pop { box-shadow: 6px 6px 0 var(--ink) }
+.app.float .pop.ctxcard { right: 16px !important }
+.app.float .pop:not(.ctxcard) { left: 4px !important }
+/* ---------- grid: everything snapped, single hairlines, no shadows on panes ---------- */
+.app.grid .frame { box-shadow: none; margin: 14px 0 0; border-left: 0; border-right: 0; border-bottom: 0; padding-left: 12px; padding-right: 12px }
+.app.grid .frame > .t { left: 10px }
+.app.grid .mhead { background: repeating-conic-gradient(var(--faint) 0 25%, transparent 0 50%) 0 0 / 2px 2px; border-bottom: 1px solid var(--ink) }
+.app.grid .u { box-shadow: none; border-width: 0 0 0 2px; align-self: stretch; max-width: none }
+.app.grid .u::before { content: "> "; color: var(--dim) }
 </style>
 
 <div id="out"></div>
@@ -239,13 +264,18 @@ Checking raster v0.3.0</pre>
 
   const menu = `<div class="menu" style="left:198px;top:196px;width:206px">
     ${[["open", "Open", "Enter", 1], ["rename", "Rename", "F2"], ["copy", "Copy title", ""], ["folder", "Reveal folder", ""], null, ["stop", "End session", "Ctrl W"], ["trash", "Remove from list", "Del", 0, 1]].map(m => m ? `<div class="it${m[3] ? " sel" : ""}${m[4] ? " danger" : ""}">${svg(m[0])}<span>${m[1]}</span><kbd>${m[2]}</kbd></div>` : '<hr class="sep" style="margin:4px 10px">').join("")}</div>`;
-  return `<div class="app ${v}">${side}${main}${panel}${menu}</div>`;
+  return `<div class="app ${v}">${v === "float" ? '<canvas class="field" width="300" height="180"></canvas>' : ""}${side}${main}${panel}${menu}</div>`;
 }
 
-const V = [["mono", "Raster · mono"], ["amber", "Raster · amber"]];
+const V = [["grid", "Raster · grid"], ["float", "Raster · float"]];
 const want = location.hash.slice(1);
 document.getElementById("out").innerHTML = V.filter(([v]) => !want || want === v).map(([v, n]) => `<section class="shot"><h2>${n}</h2>${app(v)}</section>`).join("");
 document.querySelectorAll("canvas[data-b]").forEach(c => { c.width = c.height = 16; const s = sprite(c.dataset.b, c.dataset.a); c.getContext("2d").drawImage(s, 0, 0); });
+const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+document.querySelectorAll(".field").forEach(fd => { const g = fd.getContext("2d"), W = fd.width, H = fd.height, im = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const a = Math.exp(-(((x - W * .62) ** 2) + ((y - H * .3) ** 2)) / 2600), b = Math.exp(-(((x - W * .15) ** 2) + ((y - H * .85) ** 2)) / 1500);
+    const v = Math.min(1, a + b * .8) * 64, o = (y * W + x) * 4, on = v > B8[(y & 7) * 8 + (x & 7)] ? 210 : 0; im.data[o] = im.data[o + 1] = im.data[o + 2] = on; im.data[o + 3] = 255; }
+  g.putImageData(im, 0, 0); });
 // animate the braille spinners
 let f = 0;
 const spins = [...document.querySelectorAll("[data-spin]")];
