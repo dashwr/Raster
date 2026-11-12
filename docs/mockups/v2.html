@@ -1,0 +1,415 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Raster Directions v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=VT323&family=Silkscreen&family=Pixelify+Sans:wght@400;600&display=swap">
+<style>
+/* layout: three dark directions, two screens each (chat with popovers, settings); shared sprites and icons */
+:root { --page: #050505; --page-ink: #e8e8e8; --page-dim: #858585; color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--page-ink); font: 13px/1.5 "JetBrains Mono", monospace; padding: 24px }
+.shot { display: flex; flex-direction: column; gap: 14px; margin-bottom: 48px }
+.shot h2 { margin: 0; font: 600 15px/1.3 "JetBrains Mono", monospace }
+.shot .tag { color: var(--page-dim); font-size: 12px }
+.app { width: 1200px; height: 720px; display: grid; position: relative; overflow: hidden; font-size: 13px }
+.app button, .app th, .app td, .app input { color: inherit; font: inherit }
+.app svg.i { width: 16px; height: 16px; flex: none; shape-rendering: crispEdges; fill: currentColor }
+.side, .main, .panel { min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative }
+.row { display: flex; align-items: center; gap: 8px }
+.grow { flex: 1; min-width: 0 }
+.trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.transcript { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 14px }
+.msg-user { align-self: flex-end; max-width: 72% }
+.call { display: flex; gap: 8px; align-items: center }
+.opt { display: flex; gap: 10px; align-items: flex-start }
+.cbar { display: flex; align-items: center; gap: 6px }
+.pop, .menu { position: absolute; z-index: 5 }
+.swarm { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 8px }
+.mate { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center }
+.mate canvas { width: 64px; height: 64px; image-rendering: pixelated }
+/* two-label switch: the thumb slides under the active label */
+.sw { position: relative; display: grid; grid-template-columns: 1fr 1fr; user-select: none }
+.sw span { position: relative; z-index: 1; text-align: center }
+.sw .thumb { position: absolute; top: 0; bottom: 0; left: 50%; width: 50%; transition: left .16s steps(4) }
+.sw.left .thumb { left: 0 }
+.slider { display: grid; grid-template-columns: repeat(5, 1fr); position: relative }
+.slider span { text-align: center; position: relative }
+.settings { flex: 1; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-content: start }
+.card { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.kv { display: flex; align-items: center; gap: 10px }
+.kv > span:first-child { flex: 1; min-width: 0 }
+.agents { width: 100%; border-collapse: collapse }
+.agents td, .agents th { text-align: left; font-weight: 400 }
+
+/* ===================== BOX: terminal, white on black ===================== */
+.box { --bg: #000; --ink: #e9e9e9; --dim: #808080; --faint: #3c3c3c; --raise: #0d0d0d;
+  background: var(--bg); color: var(--ink); grid-template-columns: 264px 1fr 248px; line-height: 20px }
+.box .side, .box .panel { padding: 10px 0 }
+.box .frame { margin: 0 8px 12px; border: 1px solid var(--dim); position: relative; padding: 12px 8px 8px; display: flex; flex-direction: column; gap: 8px }
+.box .frame > b { position: absolute; top: -10px; left: 8px; background: var(--bg); padding: 0 4px; font-weight: 400; color: var(--dim) }
+.box .logo { font-weight: 600; letter-spacing: 2px }
+.box .logo small { color: var(--faint); font-weight: 400; letter-spacing: 0 }
+.box .btn { display: flex; gap: 8px; align-items: center; padding: 0 6px; height: 24px; border: 1px solid var(--faint); background: none }
+.box .btn kbd { margin-left: auto; font: inherit; color: var(--faint) }
+.box .btn.solid { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.box .btn.solid kbd { color: #555 }
+.box .sw { border: 1px solid var(--dim); height: 22px; line-height: 20px }
+.box .sw span { color: var(--dim) }
+.box .sw span.on { color: var(--bg) }
+.box .sw .thumb { background: var(--ink) }
+.box .tree .dir { color: var(--dim) }
+.box .tree .s { display: flex; gap: 8px; padding: 0 6px; align-items: center }
+.box .tree .s.sel { background: var(--ink); color: var(--bg) }
+.box .tree .s .st { margin-left: auto }
+.box .main { border-left: 1px solid var(--dim); border-right: 1px solid var(--dim) }
+.box .mhead { padding: 4px 14px; border-bottom: 1px solid var(--dim); display: flex; gap: 10px; color: var(--dim) }
+.box .mhead b { color: var(--ink); font-weight: 400 }
+.box .transcript { padding: 16px }
+.box .msg-user { border-left: 2px solid var(--ink); padding-left: 10px; align-self: stretch; max-width: none }
+.box .msg-user::before { content: "> "; color: var(--dim) }
+.box p { margin: 0 0 6px }
+.box table.md { border-collapse: collapse }
+.box table.md td, .box table.md th { border: 1px solid var(--faint); padding: 0 8px; font-weight: 400; text-align: left }
+.box .tools { border: 1px dashed var(--faint); padding: 6px 10px; color: var(--dim) }
+.box .tools b { color: var(--ink); font-weight: 400 }
+.box .ask { border: 1px solid var(--ink); padding: 10px 12px }
+.box .ask .opt.sel { background: var(--ink); color: var(--bg) }
+.box .ask small { color: var(--dim) }
+.box .ask .opt.sel small { color: #444 }
+.box .composer { border-top: 1px solid var(--dim); padding: 8px 14px 10px }
+.box .cin { color: var(--faint); padding: 2px 0 10px }
+.box .cin::after { content: "█"; color: var(--ink) }
+.box .cb { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 1px solid var(--faint); background: none; color: var(--dim) }
+.box .cb.agent { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.box .cb.send { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.box .ctx { width: 8px; height: 24px; border: 1px solid var(--dim); position: relative }
+.box .ctx i { position: absolute; inset: auto 0 0; height: 42%; background: var(--ink) }
+.box .pop, .box .menu { background: var(--bg); border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--faint); padding: 6px 0 }
+.box .pop .h { color: var(--dim); padding: 0 10px 4px }
+.box .it { display: flex; gap: 8px; padding: 0 10px; align-items: center }
+.box .it.sel { background: var(--ink); color: var(--bg) }
+.box .it small, .box .it kbd { margin-left: auto; color: var(--dim); font: inherit }
+.box .it.sel small, .box .it.sel kbd { color: #444 }
+.box .menu hr { border: 0; border-top: 1px solid var(--faint); margin: 4px 0 }
+.box .danger { color: #ff6d5e }
+.box .slider { margin: 6px 10px 2px }
+.box .slider span { color: var(--dim); padding-top: 4px }
+.box .slider span.on { background: var(--ink); color: var(--bg) }
+.box .slider span.lit::before { content: "▮"; position: absolute; top: -12px; left: 0; right: 0; color: var(--ink) }
+.box .slider span:not(.lit)::before { content: "▯"; position: absolute; top: -12px; left: 0; right: 0; color: var(--faint) }
+.box .meter { letter-spacing: -1px; white-space: nowrap; overflow: hidden }
+.box .mate { color: var(--dim); font-size: 11px; line-height: 15px }
+.box .mate b { color: var(--ink); font-weight: 400 }
+.box .bgj { display: flex; gap: 8px; color: var(--dim) }
+.box .bgj b { color: var(--ink); font-weight: 400 }
+.box pre { margin: 0; border: 1px solid var(--faint); padding: 4px 6px; color: var(--dim); font: 11px/16px "JetBrains Mono", monospace; white-space: pre-wrap }
+.box .settings { padding: 16px }
+.box .card { border: 1px solid var(--dim); padding: 12px 10px 10px; position: relative }
+.box .card > b { position: absolute; top: -10px; left: 8px; background: var(--bg); padding: 0 4px; font-weight: 400 }
+.box .kv small { color: var(--dim) }
+.box .tg { width: 52px; height: 20px; line-height: 18px; font-size: 11px }
+.box .agents td, .box .agents th { padding: 0 6px 0 0; border-bottom: 1px solid var(--faint) }
+.box .agents th { color: var(--dim) }
+.box .chip { border: 1px solid var(--faint); padding: 0 6px }
+
+/* ===================== SCOPE: amber phosphor instrument ===================== */
+.scope { --bg: #0b0805; --glass: #120d07; --ink: #ffb54d; --hot: #ffe0a8; --dim: #a6722a; --faint: #4a3311; --grid: #23180a;
+  background: var(--bg); color: var(--ink); font-family: "VT323", monospace; font-size: 19px; line-height: 20px;
+  grid-template-columns: 262px 1fr 246px; gap: 8px; padding: 8px; text-shadow: 0 0 6px rgba(255,181,77,.3) }
+.scope .side, .scope .main, .scope .panel { background: var(--glass); border: 1px solid var(--faint) }
+.scope .main { background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 40px 40px }
+.scope .ch { display: flex; gap: 8px; padding: 1px 10px; background: var(--faint); color: var(--hot); text-shadow: none }
+.scope .ch span:last-child { margin-left: auto }
+.scope .side > :not(.ch), .scope .panel > :not(.ch) { margin: 8px 10px 0 }
+.scope .logo { font-size: 28px; color: var(--hot) }
+.scope .logo small { font-size: 17px; color: var(--dim) }
+.scope .btn { display: flex; gap: 8px; align-items: center; border: 1px solid var(--dim); padding: 0 8px; background: none }
+.scope .btn kbd { margin-left: auto; font: inherit; color: var(--dim) }
+.scope .sw { border: 1px solid var(--dim); height: 22px }
+.scope .sw span { color: var(--dim) }
+.scope .sw span.on { color: var(--bg); text-shadow: none }
+.scope .sw .thumb { background: var(--ink); box-shadow: 0 0 8px rgba(255,181,77,.5) }
+.scope .tree .dir { color: var(--dim) }
+.scope .tree .s { display: flex; gap: 8px; padding: 0 4px; align-items: center }
+.scope .tree .s.sel { outline: 1px solid var(--ink); color: var(--hot) }
+.scope .tree .s .st { margin-left: auto }
+.scope .transcript { padding: 14px 18px }
+.scope .msg-user { color: var(--hot); border: 1px solid var(--dim); background: var(--bg); padding: 2px 10px }
+.scope p { margin: 0 0 6px }
+.scope table.md { border-collapse: collapse }
+.scope table.md td, .scope table.md th { border: 1px solid var(--faint); padding: 0 10px; text-align: left; font-weight: 400 }
+.scope .tools { color: var(--dim) }
+.scope .tools b { color: var(--ink); font-weight: 400 }
+.scope .ask { border: 1px solid var(--ink); background: var(--bg); padding: 8px 12px }
+.scope .ask .opt.sel { background: var(--ink); color: var(--bg); text-shadow: none }
+.scope .ask small { color: var(--dim) }
+.scope .ask .opt.sel small { color: var(--glass) }
+.scope .composer { border-top: 1px solid var(--faint); background: var(--bg); padding: 8px 12px }
+.scope .cin { color: var(--dim); padding-bottom: 8px }
+.scope .cb { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--faint); background: none; text-shadow: inherit }
+.scope .cb.agent { border-color: var(--ink) }
+.scope .cb.send { background: var(--ink); color: var(--bg); text-shadow: none }
+.scope .ctx { width: 10px; height: 26px; border: 1px solid var(--dim); position: relative }
+.scope .ctx i { position: absolute; inset: auto 0 0; height: 42%; background: repeating-linear-gradient(var(--ink) 0 3px, transparent 3px 4px) }
+.scope .pop, .scope .menu { background: var(--bg); border: 1px solid var(--ink); box-shadow: 0 0 18px rgba(255,181,77,.15); padding: 4px 0 }
+.scope .pop .h { color: var(--dim); padding: 0 10px }
+.scope .it { display: flex; gap: 8px; padding: 0 10px; align-items: center }
+.scope .it.sel { background: var(--ink); color: var(--bg); text-shadow: none }
+.scope .it small, .scope .it kbd { margin-left: auto; color: var(--dim); font: inherit }
+.scope .it.sel small, .scope .it.sel kbd { color: var(--glass) }
+.scope .menu hr { border: 0; border-top: 1px solid var(--faint); margin: 3px 0 }
+.scope .danger { color: #ff7d4d }
+.scope .slider { margin: 6px 10px; height: 34px; border: 1px solid var(--faint) }
+.scope .slider span { padding-top: 12px; font-size: 16px; color: var(--dim) }
+.scope .slider span::before { content: ""; position: absolute; top: 3px; left: 3px; right: 3px; height: 6px; background: var(--faint) }
+.scope .slider span.lit::before { background: var(--ink); box-shadow: 0 0 6px var(--ink) }
+.scope .slider span.on { color: var(--hot) }
+.scope .meter { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 12px }
+.scope .meter i { background: var(--faint) }
+.scope .meter i.f { background: var(--ink); box-shadow: 0 0 4px var(--ink) }
+.scope .mate { color: var(--dim); font-size: 16px; line-height: 16px }
+.scope .mate b { color: var(--ink); font-weight: 400 }
+.scope .mate canvas { filter: sepia(1) saturate(5) hue-rotate(-14deg) brightness(.95) }
+.scope .bgj { display: flex; gap: 8px; color: var(--dim) }
+.scope .bgj b { color: var(--ink); font-weight: 400 }
+.scope pre { margin: 0; border: 1px solid var(--faint); padding: 2px 6px; color: var(--dim); font: 16px/16px "VT323", monospace; white-space: pre-wrap }
+.scope .settings { padding: 14px 18px }
+.scope .card { border: 1px solid var(--faint); background: var(--bg) }
+.scope .card > b { background: var(--faint); color: var(--hot); padding: 1px 8px; font-weight: 400; text-shadow: none }
+.scope .card > :not(b) { margin: 0 8px }
+.scope .card > :last-child { margin-bottom: 8px }
+.scope .kv small { color: var(--dim) }
+.scope .tg { width: 60px; height: 20px; font-size: 15px; line-height: 18px }
+.scope .agents td, .scope .agents th { padding: 0 6px 0 0; border-bottom: 1px solid var(--faint) }
+.scope .agents th { color: var(--dim) }
+.scope .chip { border: 1px solid var(--faint); padding: 0 6px }
+
+/* ===================== DESK: 1-bit night desktop on a dithered field ===================== */
+.desk { --bg: #000; --win: #000; --ink: #f4f4f4; --dim: #8c8c8c; --faint: #383838;
+  background: var(--bg); color: var(--ink); font-family: "Pixelify Sans", monospace; font-size: 14px;
+  grid-template-columns: 250px 1fr 236px; gap: 16px; padding: 16px }
+.desk .field { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 0 }
+.desk .side, .desk .main, .desk .panel { z-index: 1; background: var(--win); border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink) }
+.desk .tb { height: 22px; display: flex; align-items: center; padding: 0 6px; border-bottom: 2px solid var(--ink); background: repeating-linear-gradient(var(--ink) 0 1px, var(--win) 1px 3px) }
+.desk .tb i { width: 12px; height: 12px; border: 2px solid var(--ink); background: var(--win) }
+.desk .tb b { margin: 0 auto; background: var(--win); padding: 0 8px; font: 400 12px "Silkscreen", monospace }
+.desk .side > :not(.tb), .desk .panel > :not(.tb) { margin: 10px 10px 0 }
+.desk .logo { font: 400 19px "Silkscreen", monospace }
+.desk .logo small { font-size: 11px; color: var(--dim) }
+.desk .btn { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border: 2px solid var(--ink); background: var(--win); box-shadow: 2px 2px 0 var(--ink) }
+.desk .btn kbd { margin-left: auto; font: 11px "JetBrains Mono", monospace; color: var(--dim) }
+.desk .sw { border: 2px solid var(--ink); height: 24px; line-height: 20px; background: repeating-conic-gradient(var(--faint) 0 25%, var(--win) 0 50%) 0 0 / 2px 2px }
+.desk .sw span { color: var(--dim) }
+.desk .sw span.on { color: var(--win) }
+.desk .sw .thumb { background: var(--ink) }
+.desk .tree .dir { font: 11px "Silkscreen", monospace; color: var(--dim); margin-top: 4px }
+.desk .tree .s { display: flex; gap: 8px; padding: 2px 4px; align-items: center }
+.desk .tree .s.sel { background: var(--ink); color: var(--win) }
+.desk .tree .s .st { margin-left: auto }
+.desk .transcript { padding: 14px 18px; font: 13px/1.55 "JetBrains Mono", monospace }
+.desk .msg-user { background: var(--ink); color: var(--win); padding: 6px 10px; box-shadow: 3px 3px 0 var(--dim) }
+.desk p { margin: 0 0 6px }
+.desk table.md { border-collapse: collapse; border: 2px solid var(--ink) }
+.desk table.md td, .desk table.md th { border: 1px solid var(--dim); padding: 1px 10px; text-align: left; font-weight: 400 }
+.desk table.md th { background: var(--ink); color: var(--win) }
+.desk .tools { border: 2px dotted var(--dim); padding: 6px 10px; font-size: 12px; color: var(--dim) }
+.desk .tools b { color: var(--ink); font-weight: 400 }
+.desk .ask { border: 2px solid var(--ink); padding: 10px 12px; box-shadow: 4px 4px 0 var(--ink) }
+.desk .ask .q { font: 15px "Pixelify Sans", monospace }
+.desk .ask .opt { padding: 3px 4px }
+.desk .ask .opt .r { width: 14px; height: 14px; border: 2px solid var(--ink); border-radius: 50%; flex: none; margin-top: 3px }
+.desk .ask .opt.sel .r { background: radial-gradient(var(--ink) 40%, var(--win) 45%) }
+.desk .ask small { color: var(--dim) }
+.desk .composer { border-top: 2px solid var(--ink); padding: 8px 12px; font-family: "JetBrains Mono", monospace }
+.desk .cin { color: var(--dim); padding-bottom: 10px }
+.desk .cb { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 2px solid var(--ink); background: var(--win); font-size: 12px }
+.desk .cb.agent, .desk .cb.send { background: var(--ink); color: var(--win) }
+.desk .ctx { width: 10px; height: 26px; border: 2px solid var(--ink); position: relative; background: repeating-conic-gradient(var(--faint) 0 25%, var(--win) 0 50%) 0 0 / 2px 2px }
+.desk .ctx i { position: absolute; inset: auto 0 0; height: 42%; background: var(--ink) }
+.desk .pop, .desk .menu { background: var(--win); border: 2px solid var(--ink); box-shadow: 5px 5px 0 var(--ink); padding: 4px 0; font: 12px/1.6 "JetBrains Mono", monospace }
+.desk .pop .h { font: 11px "Silkscreen", monospace; color: var(--dim); padding: 0 10px 4px }
+.desk .it { display: flex; align-items: center; gap: 8px; padding: 1px 10px }
+.desk .it.sel { background: var(--ink); color: var(--win) }
+.desk .it small, .desk .it kbd { margin-left: auto; color: var(--dim); font: inherit }
+.desk .it.sel small, .desk .it.sel kbd { color: #555 }
+.desk .menu hr { border: 0; border-top: 2px dotted var(--dim); margin: 4px 0 }
+.desk .danger { color: #ff7a6b }
+.desk .slider { margin: 6px 10px 4px; height: 34px }
+.desk .slider::before { content: ""; position: absolute; left: 10%; right: 10%; top: 6px; height: 4px; border: 1px solid var(--ink); background: repeating-conic-gradient(var(--ink) 0 25%, var(--win) 0 50%) 0 0 / 2px 2px }
+.desk .slider span { padding-top: 16px; font-size: 11px; color: var(--dim) }
+.desk .slider span.on { color: var(--ink) }
+.desk .slider span.on::before { content: ""; position: absolute; left: 50%; top: 0; width: 12px; height: 16px; transform: translateX(-50%); background: var(--win); border: 2px solid var(--ink); box-shadow: 2px 2px 0 var(--ink) }
+.desk .meter { height: 10px; border: 2px solid var(--ink); background: linear-gradient(90deg, var(--ink) 42%, transparent 42%) }
+.desk .mate { font-size: 12px; color: var(--dim) }
+.desk .mate b { color: var(--ink); font-weight: 400 }
+.desk .mate canvas { outline: 2px solid var(--ink) }
+.desk .bgj { display: flex; gap: 8px; font: 12px "JetBrains Mono", monospace; color: var(--dim) }
+.desk .bgj b { color: var(--ink); font-weight: 400 }
+.desk pre { margin: 0; background: var(--ink); color: var(--win); padding: 4px 6px; font: 11px/15px "JetBrains Mono", monospace; white-space: pre-wrap }
+.desk .settings { padding: 14px; font: 12px/1.6 "JetBrains Mono", monospace }
+.desk .card { border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); padding-bottom: 8px }
+.desk .card > b { background: repeating-linear-gradient(var(--ink) 0 1px, var(--win) 1px 3px); border-bottom: 2px solid var(--ink); text-align: center; font: 400 11px/20px "Silkscreen", monospace }
+.desk .card > b span { background: var(--win); padding: 0 6px }
+.desk .card > :not(b) { margin: 0 10px }
+.desk .kv small { color: var(--dim) }
+.desk .tg { width: 60px; height: 22px; font-size: 11px }
+.desk .agents td, .desk .agents th { padding: 0 6px 0 0; border-bottom: 1px dotted var(--dim) }
+.desk .agents th { color: var(--dim) }
+.desk .chip { border: 2px solid var(--ink); padding: 0 6px }
+</style>
+
+<div id="out"></div>
+
+<script>
+const ICONS = {
+  open: ["............","..########..","..#......#..","..#......#..","..#..##..#..","..#..###.#..","..#..####...","..#..##.....","..#.........","..#####.....","............","............"],
+  stop: ["............","............","..########..","..########..","..##....##..","..##....##..","..##....##..","..##....##..","..########..","..########..","............","............"],
+  trash: ["....####....","..########..","............","...######...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...#.##.#...","...######...","............","............"],
+  copy: ["............","....######..","....#....#..","..######.#..","..#....#.#..","..#....#.#..","..#....###..","..#....#....","..######....","............","............","............"],
+  rename: ["............","..........#.",".........###","........###.",".......###..","......###...",".....###....","....###.....","....##......","..######....","............","............"],
+  plus: ["............",".....##.....",".....##.....",".....##.....",".....##.....","..########..","..########..",".....##.....",".....##.....",".....##.....",".....##.....","............"],
+  search: ["............","...####.....","..#....#....",".#......#...",".#......#...",".#......#...","..#....#....","...#####....",".......##...","........##..",".........##.","............"],
+  chat: ["............",".##########.",".#........#.",".#.##.###.#.",".#........#.",".#.####...#.",".#........#.",".####.#####.","....#.#.....","....##......","............","............"],
+  code: ["............","............","...#....#...","..#....#....",".#....#.....","#.....#.....",".#...#......","..#..#......","...##.......","............","............","............"],
+  find: ["............","....###.....","...#...#....","..#.#...#...","..#.....#...","..#.....#...","...#...#....","....####....","......##....",".......##...","........#...","............"],
+  test: ["............","..........#.",".........##.","........##..","#......##...","##....##....",".##..##.....","..####......","...##.......","............","............","............"],
+  gear: ["............",".....##.....","..#.####.#..","...######...","..###..###..",".###....###.",".###....###.","..###..###..","...######...","..#.####.#..",".....##.....","............"],
+  folder: ["............","............",".####.......",".#...#####..",".#........#.",".##########.",".#........#.",".#........#.",".#........#.",".##########.","............","............"],
+  provA: ["............",".....#......",".....#......","..#..#..#...","...#.#.#....","....###.....","#####.#####.","....###.....","...#.#.#....","..#..#..#...",".....#......",".....#......"],
+  provO: ["............","....####....","..##....##..",".#..####..#.",".#.#....#.#.","#.#......#.#","#.#......#.#",".#.#....#.#.",".#..####..#.","..##....##..","....####....","............"],
+  send: ["............",".....##.....","....####....","...######...","..##.##.##..",".....##.....",".....##.....",".....##.....",".....##.....",".....##.....","............","............"],
+  term: ["............",".##########.",".#........#.",".#.#......#.",".#..#.....#.",".#.#......#.",".#....###.#.",".#........#.",".##########.","............","............","............"],
+  ctx: ["............","....####....","....#..#....","....#..#....","....#..#....","....####....","....####....","....####....","....####....","....####....","............","............"],
+  key: ["............","..####......",".#....#.....",".#.##.#.....",".#....######","..####...#.#","..........#.","............","............","............","............","............"],
+  brain: ["............","...##.##....","..#..#..#...",".#...#...#..",".#.#.#.#.#..",".#...#...#..","..#..#..#...","...#.#.#....","....###.....",".....#......","............","............"],
+};
+const svg = n => { let r = ""; ICONS[n].forEach((row, y) => { for (let x = 0; x < 12; x++) if (row[x] === "#") r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }); return `<svg class="i" viewBox="0 0 12 12" aria-hidden="true">${r}</svg>`; };
+
+// swarm mates: 16x16 creatures; the face changes with the state
+const BODIES = {
+  blob: ["................","................",".....######.....","...##########...","..############..",".##############.",".##############.","################","################","################","################",".##############.",".##############.","..##.##..##.##..","................","................"],
+  cat: ["................","..#..........#..","..##........##..","..###......###..","..############..",".##############.",".##############.",".##############.",".##############.",".##############.","..############..","...##########...","...##......##...","...##......##...","................","................"],
+  ghost: ["................","......####......","....########....","...##########...","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..############..","..##.##..##.##..","..#...#..#...#..","................"],
+  bot: [".......##.......",".......##.......","...##########...","...##########...","..############..","..############..","..############..","..############..","..############..","..############..","...##########...","....########....","....##....##....","...###....###...","................","................"],
+};
+const FACES = {
+  thinking: { eyes: [[5, 6], [6, 6], [9, 6], [10, 6]], mouth: [[7, 10], [8, 10]], extra: [[13, 1], [14, 0], [15, 1]] },
+  tool: { eyes: [[5, 6], [5, 7], [10, 6], [10, 7]], mouth: [[6, 10], [7, 9], [8, 9], [9, 10]], extra: [[2, 4], [1, 5], [2, 6]] },
+  writing: { eyes: [[5, 7], [6, 7], [9, 7], [10, 7]], mouth: [[6, 9], [7, 10], [8, 10], [9, 9]], extra: [] },
+  idle: { eyes: [[5, 7], [6, 7], [9, 7], [10, 7]], mouth: [[7, 10], [8, 10]], extra: [[12, 1], [13, 1], [14, 1], [13, 2], [12, 3], [13, 3], [14, 3]] },
+};
+function mate(body, state) {
+  const c = document.createElement("canvas"); c.width = c.height = 16; const g = c.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0, 0, 16, 16); g.fillStyle = "#fff";
+  BODIES[body].forEach((row, y) => { for (let x = 0; x < 16; x++) if (row[x] === "#") g.fillRect(x, y, 1, 1); });
+  const f = FACES[state]; g.fillStyle = "#000";
+  f.eyes.concat(f.mouth).forEach(([x, y]) => g.fillRect(x, y, 1, 1));
+  g.fillStyle = "#fff"; f.extra.forEach(([x, y]) => g.fillRect(x, y, 1, 1));
+  return c.toDataURL();
+}
+
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const SPIN = "⣾";
+const sessions = [["raster", [["code", "compose popovers", SPIN, 1], ["test", "e2e: login flow", "?"], ["chat", "naming notes", ""]]], ["ncrm", [["code", "webhook retries", "⣽"], ["find", "sqlite wal limits", ""]]]];
+const MATES = [["blob", "thinking", "explore", "Haiku"], ["cat", "tool", "test", "Sonnet"], ["bot", "writing", "docs", "Haiku"], ["ghost", "idle", "search", "Haiku"]];
+const WORD = { thinking: "thinking", tool: "using a tool", writing: "writing", idle: "idle" };
+
+function sidebar(k, mode) {
+  const wrapOpen = k === "box" ? `<div class="frame"><b>raster</b>` : "";
+  const sw = `<div class="sw"><i class="thumb"></i><span>active</span><span class="on">all</span></div>`;
+  const body = `<div class="logo">RASTER <small>v0.2.0</small></div>
+    <div class="btn solid">${svg("plus")}<span>New session</span><kbd>Ctrl N</kbd></div>
+    <div class="btn">${svg("search")}<span>Search</span><kbd>Ctrl K</kbd></div>${sw}
+    <div class="tree">${sessions.map(([d, items]) => `<div class="dir">${d}</div>${items.map(([a, t, st, sel]) => `<div class="s${sel ? " sel" : ""}">${svg(a)}<span class="trunc grow">${t}</span><span class="st">${st}</span></div>`).join("")}`).join("")}</div>`;
+  const foot = `<div class="grow"></div><div class="row" style="margin-bottom:12px${mode === "settings" ? ";font-weight:600" : ""}">${svg("gear")}<span>Settings</span></div>`;
+  if (k === "box") return `<aside class="side"><div class="frame"><b>raster</b>${body}</div><div class="grow"></div><div class="frame"><b>account</b><div class="row">${svg("provA")}<span class="grow">Claude · signed in</span></div><div class="row"${mode === "settings" ? ' style="background:var(--ink);color:var(--bg)"' : ""}>${svg("gear")}<span>Settings</span></div></div></aside>`;
+  const head = k === "scope" ? `<div class="ch"><span>CH1</span><span>SESSIONS</span><span>5</span></div>` : `<div class="tb"><i></i><b>Sessions</b></div>`;
+  return `<aside class="side">${head}${body}${foot}</aside>`;
+}
+
+function panel(k) {
+  const head = (n, t, c) => k === "scope" ? `<div class="ch"><span>CH${n}</span><span>${t.toUpperCase()}</span><span>${c}</span></div>` : k === "desk" ? `<div class="tb"${n > 2 ? ' style="margin-top:14px;border-top:2px solid var(--ink)"' : ""}><i></i><b>${t}</b></div>` : "";
+  const swarm = `<div class="swarm">${MATES.map(([b, s, l, m]) => `<div class="mate"><canvas data-body="${b}" data-state="${s}"></canvas><b>${l}</b><span>${WORD[s]}</span><span style="opacity:.7">${m}</span></div>`).join("")}</div>`;
+  const jobs = `<div class="bgj"><span>⣟</span><b class="grow trunc">cargo check</b><span>12s</span></div>
+    <pre>Checking rune v0.4.0
+Checking raster v0.2.0
+warning: unused import</pre>
+    <div class="bgj" style="margin-top:6px"><span>✓</span><b class="grow trunc">rg -n "Popover::" src/ui</b><span>0.1s</span></div>`;
+  if (k === "box") return `<aside class="panel"><div class="frame"><b>swarm · 4</b>${swarm}</div><div class="frame"><b>background · 2</b>${jobs}</div></aside>`;
+  return `<aside class="panel">${head(2, "Swarm", 4)}${swarm}${head(3, "Background", 2)}${jobs}</aside>`;
+}
+
+function chat(k) {
+  const head = k === "desk" ? `<div class="tb"><i></i><b>compose popovers · code</b></div>` : k === "scope" ? `<div class="ch"><span>${svg("code")}</span><span>COMPOSE POPOVERS</span><span>~/projects/raster</span></div>` : `<div class="mhead">${svg("code")}<b>compose popovers</b><span>~/projects/raster</span></div>`;
+  const radio = sel => k === "desk" ? `<span class="r"></span>` : `<span>${sel ? "(•)" : "( )"}</span>`;
+  const transcript = `<div class="transcript">
+    <div class="msg-user">The popovers open in the middle of the chat. Anchor each one to the button that opens it.</div>
+    <div><p>They render inside the transcript column, so they center on it. I'll move them to an overlay layer placed from the button's rect.</p>
+    <table class="md"><tr><th>popover</th><th>anchor</th><th>opens</th></tr><tr><td>agent</td><td>agent button</td><td>above, left edge</td></tr><tr><td>model · effort</td><td>model button</td><td>above, left edge</td></tr><tr><td>context</td><td>context bar</td><td>above, right edge</td></tr></table></div>
+    <div class="tools"><div class="call">${svg("term")}<b>bash</b><span class="grow">rg -n "Popover::" src/ui</span><span>✓</span></div><div class="call">${svg("open")}<b>read</b><span class="grow">src/ui/composer.rs</span><span>✓</span></div><div class="call">${svg("term")}<b>bash</b><span class="grow">cargo check</span><span>⣟</span></div></div>
+    <div class="ask"><div class="q">Where should the effort control live?</div>
+      <div class="opt sel">${radio(1)}<div>Inside the model popover<br><small>one place for model and effort</small></div></div>
+      <div class="opt">${radio(0)}<div>Its own popover<br><small>opened from the effort label</small></div></div></div>
+  </div>`;
+  const composer = `<div class="composer"><div class="cin">Message code</div><div class="cbar">
+    <button class="cb" aria-label="Attach or mention">${svg("plus")}</button>
+    <button class="cb agent">${svg("code")}<span>code</span></button>
+    <button class="cb">${svg("provA")}<span>Opus 5.5 · high</span></button>
+    <span class="grow"></span><span class="ctx" title="84k of 200k"><i></i></span>
+    <button class="cb send" aria-label="Send">${svg("send")}</button></div></div>`;
+  const pop = `<div class="pop" style="left:100px;bottom:${k === "scope" ? 56 : 52}px;width:280px">
+    <div class="h">Model · connected only</div>
+    ${[["Opus 5.5", "Claude", 1, "provA"], ["Sonnet 5.5", "Claude", 0, "provA"], ["Haiku 5.5", "Claude", 0, "provA"], ["Fable 5.1", "Claude", 0, "provA"]].map(([n, p, s, ic]) => `<div class="it${s ? " sel" : ""}">${svg(ic)}<span>${n}</span><small>${p}</small></div>`).join("")}
+    <div class="h" style="padding-top:12px">Effort</div>
+    <div class="slider">${EFFORTS.map((e, i) => `<span class="${i <= 2 ? "lit" : ""}${i === 2 ? " on" : ""}">${e}</span>`).join("")}</div></div>`;
+  const meter = k === "box" ? `<div class="meter">${"█".repeat(13)}${"░".repeat(18)}</div>` : k === "scope" ? `<div class="meter">${Array.from({ length: 24 }, (_, i) => `<i class="${i < 10 ? "f" : ""}"></i>`).join("")}</div>` : `<div class="meter"></div>`;
+  const ctx = `<div class="pop" style="right:12px;bottom:${k === "scope" ? 56 : 52}px;width:228px;padding:8px 10px">
+    <div class="row">${svg("ctx")}<span class="grow">Context</span><span>84k / 200k</span></div>${meter}
+    <div class="row"><span class="grow">system and tools</span><span>18k</span></div><div class="row"><span class="grow">messages</span><span>61k</span></div><div class="row"><span class="grow">compressed, 2 blocks</span><span>5k</span></div></div>`;
+  return `<main class="main">${head}${transcript}${composer}${pop}${ctx}</main>`;
+}
+
+function settings(k) {
+  const head = k === "desk" ? `<div class="tb"><i></i><b>Settings</b></div>` : k === "scope" ? `<div class="ch"><span>${svg("gear")}</span><span>SETTINGS</span><span>~/.raster</span></div>` : `<div class="mhead">${svg("gear")}<b>Settings</b><span>~/.raster</span></div>`;
+  const tg = on => `<div class="sw tg${on ? "" : " left"}"><i class="thumb"></i><span class="${on ? "" : "on"}">off</span><span class="${on ? "on" : ""}">on</span></div>`;
+  const card = (t, body) => `<div class="card"><b>${k === "desk" ? `<span>${t}</span>` : t}</b>${body}</div>`;
+  const kv = (a, b) => `<div class="kv"><span>${a}</span>${b}</div>`;
+  const acct = card("Accounts", kv(`${svg("provA")} Claude subscription<br><small>uses the Claude Code sign-in on this machine</small>`, `<span class="chip">connected</span>`)
+    + kv(`${svg("provO")} ChatGPT / Codex<br><small>OAuth in the browser</small>`, `<span class="chip">sign in</span>`)
+    + kv(`${svg("key")} OpenRouter<br><small>found in the omp keychain</small>`, `<span class="chip">connected</span>`));
+  const agents = card("Agents", `<table class="agents"><tr><th>agent</th><th>model</th><th>effort</th><th>prompt</th></tr>
+    ${[["code", "Opus 5.5", "high"], ["chat", "Opus 5.5", "medium"], ["find", "Haiku 5.5", "low"], ["test", "Sonnet 5.5", "medium"]].map(([a, m, e]) => `<tr><td>${svg(a)} ${a === "find" ? "search" : a}</td><td>${m}</td><td>${e}</td><td>${a === "find" ? "search" : a}.md</td></tr>`).join("")}</table>`
+    + kv("Subagents may invoke others", tg(false)) + kv("Max parallel subagents", `<span class="chip">6</span>`));
+  const memory = card("Memory", kv(`${svg("brain")} Vault via basic-memory<br><small>project: vault</small>`, tg(true)) + kv("Remind to record durable notes", tg(true)) + kv("Search the vault before the web", tg(true)));
+  const context = card("Context", kv("Compress reminder from", `<span class="chip">50k</span>`) + kv("Hard limit reminder at", `<span class="chip">100k</span>`) + kv("Remind every", `<span class="chip">5 requests</span>`) + kv("Dedupe repeated tool output", tg(true)));
+  const tools = card("Tools", kv("Route shell through rtk", tg(true)) + kv("Ask before destructive commands", tg(true)) + kv("Default question timeout", `<span class="chip">10 min</span>`));
+  const look = card("Appearance", kv("Dither field", tg(true)) + kv("Ripples", tg(true)) + kv("Frame cap", `<span class="chip">60 fps</span>`) + kv("Font size", `<span class="chip">13</span>`));
+  return `<main class="main">${head}<div class="settings">${acct}${agents}${memory}${context}${tools}${look}</div></main>`;
+}
+
+function app(k, mode) {
+  const menu = mode === "chat" ? `<div class="menu" style="left:${k === "box" ? 190 : k === "scope" ? 190 : 196}px;top:${k === "box" ? 238 : k === "scope" ? 238 : 252}px;width:210px">
+    ${[["open", "Open", "Enter", 1], ["rename", "Rename", "F2"], ["copy", "Copy title", ""], ["folder", "Reveal folder", ""], null, ["stop", "End session", "Ctrl W"], ["trash", "Remove from list", "Del", 0, 1]].map(m => m ? `<div class="it${m[3] ? " sel" : ""}${m[4] ? " danger" : ""}">${svg(m[0])}<span>${m[1]}</span><kbd>${m[2]}</kbd></div>` : "<hr>").join("")}</div>` : "";
+  return `<div class="app ${k}">${k === "desk" ? `<canvas class="field" width="300" height="180"></canvas>` : ""}${sidebar(k, mode)}${mode === "chat" ? chat(k) : settings(k)}${panel(k)}${menu}</div>`;
+}
+
+const DIRS = [["box", "Box", "a terminal drawn by the GPU: box-drawing frames, inverse video, one block cursor"],
+  ["scope", "Scope", "an amber instrument bench: every pane is a channel, context is a level meter"],
+  ["desk", "Desk", "a 1-bit night desktop floating on a moving dithered field"]];
+const want = /^#(\w+)-(chat|settings)$/.exec(location.hash);
+document.getElementById("out").innerHTML = DIRS.flatMap(([k, n, t]) => ["chat", "settings"].map(m => [k, n, t, m]))
+  .filter(([k, , , m]) => !want || (want[1] === k && want[2] === m))
+  .map(([k, n, t, m]) => `<section class="shot"><div><h2>${n} · ${m}</h2><div class="tag">${t}</div></div>${app(k, m)}</section>`).join("");
+
+document.querySelectorAll("canvas[data-body]").forEach(c => { const img = new Image(); img.src = mate(c.dataset.body, c.dataset.state); img.onload = () => { c.width = c.height = 16; c.getContext("2d").drawImage(img, 0, 0); }; });
+
+const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+document.querySelectorAll(".desk .field").forEach(field => {
+  const g = field.getContext("2d"), W = field.width, H = field.height, img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const a = Math.exp(-(((x - W * .32) ** 2) + ((y - H * .35) ** 2)) / 2400), b = Math.exp(-(((x - W * .8) ** 2) + ((y - H * .75) ** 2)) / 1600);
+    const v = Math.min(1, a * .9 + b * .7) * 64, o = (y * W + x) * 4, on = v > B8[(y & 7) * 8 + (x & 7)] ? 200 : 0;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = on; img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+});
+</script>
