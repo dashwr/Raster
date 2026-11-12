@@ -150,7 +150,7 @@ pub fn context_menu(m: Menu) -> El {
                 s.menu = None;
             })
     };
-    let mut menu = super::float(col().key("ctx").absolute(m.x, m.y).w(196.0).py(4.0));
+    let mut menu = super::float(col().key("ctx").absolute(m.x, m.y).w(196.0).px(1.0).py(4.0));
     match m.target {
         MenuTarget::Session(id) => {
             menu = menu

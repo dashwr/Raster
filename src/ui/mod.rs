@@ -120,7 +120,30 @@ pub fn button(key: impl Into<String>, label: impl Into<String>) -> El {
         .child(text(label.into()).font(LABEL).color(p.text))
 }
 
+static CATALOG: std::sync::RwLock<Vec<(String, String)>> = std::sync::RwLock::new(Vec::new());
+
+/// Catálogo de modelos com credencial (provedor/id, nome).
+pub fn catalog() -> Vec<(String, String)> {
+    CATALOG.read().map(|c| c.clone()).unwrap_or_default()
+}
+
+pub fn reload_catalog() {
+    let path = crate::omp::state_dir().join("ompdsh/models.json");
+    let Ok(raw) = std::fs::read_to_string(path) else { return };
+    let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) else { return };
+    let list: Vec<(String, String)> = v.iter().filter_map(|m| {
+        let (p, id) = (m["provider"].as_str()?, m["id"].as_str()?);
+        Some((format!("{p}/{id}"), m["name"].as_str().unwrap_or(id).to_string()))
+    }).collect();
+    if let Ok(mut c) = CATALOG.write() {
+        *c = list;
+    }
+}
+
 pub fn friendly_model(id: &str) -> String {
+    if let Some((_, n)) = catalog().into_iter().find(|m| m.0 == id) {
+        return n;
+    }
     for (m, name) in crate::MODELS {
         if *m == id {
             return name.to_string();

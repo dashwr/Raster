@@ -56,7 +56,7 @@ pub fn animate(px: Pixels, w: u32, h: u32, fps: std::sync::Arc<std::sync::atomic
         loop {
             let f = fps.load(std::sync::atomic::Ordering::Relaxed);
             if f > 0 || buf.is_empty() {
-                render(w, h, 3, start.elapsed().as_secs_f32(), &mut buf);
+                render(w, h, 2, start.elapsed().as_secs_f32(), &mut buf);
                 px.set(w, h, buf.clone());
             }
             std::thread::sleep(std::time::Duration::from_millis(if f > 0 { 1000 / f as u64 } else { 250 }));

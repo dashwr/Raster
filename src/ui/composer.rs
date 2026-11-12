@@ -13,11 +13,11 @@ fn current_agent(s: &State) -> Agent {
 }
 
 fn current_model(s: &State) -> String {
-    s.session().map(|x| x.model.clone()).unwrap_or_else(|| s.new_agent.default_model().into())
+    s.cur_model()
 }
 
 fn current_effort(s: &State) -> String {
-    s.session().map(|x| x.thinking.clone()).unwrap_or_else(|| "medium".into())
+    s.cur_effort()
 }
 
 fn provider_icon(model: &str) -> &'static str {
@@ -139,16 +139,65 @@ fn context_bar(s: &State) -> El {
 }
 
 pub fn popover(s: &State) -> El {
-    let (card, key, align) = match s.popover {
-        Popover::Model => (model_card(s), "model-btn", Align::End),
-        Popover::Agent => (agent_card(s), "agent-btn", Align::Start),
-        Popover::Plus => (plus_card(s), "plus-btn", Align::Start),
-        Popover::Context => (context_card(s), "ctx-btn", Align::End),
-        Popover::None => (col(), "composer", Align::Start),
+    let (card, key, align): (El, String, Align) = match s.popover {
+        Popover::Model => (model_card(s), "model-btn".into(), Align::End),
+        Popover::Agent => (agent_card(s), "agent-btn".into(), Align::Start),
+        Popover::Plus => (plus_card(s), "plus-btn".into(), Align::Start),
+        Popover::Context => (context_card(s), "ctx-btn".into(), Align::End),
+        Popover::AgentModel(a) => (agent_model_card(s, a), format!("ag-m-{}", a.name()), Align::Start),
+        Popover::AgentEffort(a) => (agent_effort_card(s, a), format!("ag-e-{}", a.name()), Align::Start),
+        Popover::None => (col(), "composer".into(), Align::Start),
     };
+    let side = if matches!(s.popover, Popover::AgentModel(_) | Popover::AgentEffort(_)) { Side::Bottom } else { Side::Top };
+    // 1 pt de recuo: o hover das linhas não cobre a borda nem a sombra
     el().key("pop-scrim").absolute(0.0, 0.0).w_full().h_full()
         .on_press(|s: &mut State| s.popover = Popover::None)
-        .child(super::float(card).anchored(key, Side::Top, align, 12.0).on_press(|_: &mut State| {}))
+        .child(super::float(el().px(1.0).py(1.0).child(card)).anchored_fit(key, side, align, 8.0).on_press(|_: &mut State| {}))
+}
+
+/// Linha de lista em popover: marca, rótulo e check quando ativa.
+fn pick_row(key: String, ic: Option<&'static str>, label: String, on: bool, f: impl Fn(&mut State) + 'static) -> El {
+    let p = pal();
+    let mut r = row().key(key).w_full().px(11.0).h(28.0).gap(10.0).center_y().hover(p.field).fill(if on { p.field } else { p.bg });
+    if let Some(ic) = ic {
+        r = r.child(icon(ic, p.text));
+    }
+    r.child(text(label).font(LABEL).color(if on { p.text } else { p.dim }).grow(1.0).truncate())
+        .child(if on { icon("check", p.text) } else { el().size(16.0, 16.0) })
+        .on_press(f)
+}
+
+fn agent_model_card(s: &State, a: Agent) -> El {
+    let (cur, _) = s.prefs.agent_defaults(a);
+    let mut list = col().key("am-list").w_full();
+    let models = s.models();
+    if models.is_empty() {
+        list = list.child(text("No connected provider").font(SMALL).color(pal().faint).px(12.0).py(4.0));
+    }
+    for (id, name) in models {
+        let id2 = id.clone();
+        list = list.child(pick_row(format!("am-{id}"), Some(provider_icon(&id)), name, id == cur, move |s: &mut State| {
+            let v = id2.clone();
+            s.prefs.agents.entry(a.name().into()).or_default().0 = v;
+            s.prefs.save();
+            s.popover = Popover::None;
+        }));
+    }
+    col().key("am-card").w(260.0).pb(6.0).child(head(&format!("{} model", a.name())))
+        .child(list.max_h(320.0).scroll(rune::ScrollSpec { stick_bottom: false }))
+}
+
+fn agent_effort_card(s: &State, a: Agent) -> El {
+    let (_, cur) = s.prefs.agent_defaults(a);
+    let mut c = col().key("ae-card").w(160.0).pb(6.0).child(head("effort"));
+    for e in EFFORTS {
+        c = c.child(pick_row(format!("ae-{e}"), None, e.to_string(), *e == cur, move |s: &mut State| {
+            s.prefs.agents.entry(a.name().into()).or_default().1 = e.to_string();
+            s.prefs.save();
+            s.popover = Popover::None;
+        }));
+    }
+    c
 }
 
 fn head(t: &str) -> El {
@@ -163,23 +212,12 @@ fn model_card(s: &State) -> El {
     if models.is_empty() {
         c = c.child(text("No connected provider. Sign in under Settings.").font(SMALL).color(p.faint).px(12.0).py(4.0).wrap());
     }
+    let mut list = col().key("m-list").w_full();
     for (id, name) in models {
-        let on = id == cur;
         let id2 = id.clone();
-        c = c.child(
-            row().key(format!("m-{id}")).w_full().px(12.0).h(28.0).gap(10.0).center_y().hover(p.field)
-                .fill(if on { p.field } else { p.bg })
-                .child(icon(provider_icon(&id), p.text))
-                .child(text(name).font(LABEL).color(if on { p.text } else { p.dim }).grow(1.0))
-                .child(if on { icon("check", p.text) } else { el().size(16.0, 16.0) })
-                .on_press(move |s: &mut State| {
-                    if let Some(x) = s.session_mut() {
-                        x.set_model(&id2);
-                        crate::store::save(s);
-                    }
-                }),
-        );
+        list = list.child(pick_row(format!("m-{id}"), Some(provider_icon(&id)), name, id == cur, move |s: &mut State| s.set_model(&id2)));
     }
+    c = c.child(list.max_h(260.0).scroll(rune::ScrollSpec { stick_bottom: false }));
     c.child(el().px(12.0).py(6.0).child(super::sep(276.0)))
         .child(head("effort"))
         .child(effort_meter(s).px(12.0))
@@ -195,32 +233,27 @@ fn effort_meter(s: &State) -> El {
     let cell = (w - (n - 1) as f32 * 3.0) / n as f32;
     let step = cell + 3.0;
     let mut track = el().key("eff-track").size(w, 22.0);
-    for i in 0..n {
+    for (i, eff) in EFFORTS.iter().enumerate() {
         let x = step * i as f32;
-        track = track.child(if i <= idx {
+        let c = if i <= idx {
             el().absolute(x, 4.0).size(cell, 14.0).fill(p.text)
         } else {
             el().absolute(x, 4.0).size(cell, 14.0).border(1.0, p.dim).child(dither(Dither::Checker, cell - 2.0, 12.0, p.faint))
-        });
+        };
+        track = track.child(c.key(format!("eff-c{i}")).on_press(move |s: &mut State| s.set_effort(eff)));
     }
     let hx = step * idx as f32 + cell - 4.0;
     track = track.child(super::hard(el().key("eff-handle").absolute(hx, 0.0).size(8.0, 22.0).fill(p.text).border(1.0, p.bg), 3.0, p.dim)
         .motion(rune::Spring::new(0.25, 0.0)));
     let set = move |s: &mut State, x: f32| {
-        let i = ((x / step) as usize).min(EFFORTS.len() - 1);
-        if let Some(sess) = s.session_mut() {
-            sess.set_thinking(EFFORTS[i]);
-        }
+        let i = ((x.max(0.0) / step) as usize).min(EFFORTS.len() - 1);
+        s.set_effort(EFFORTS[i]);
     };
     let track = track.on_drag(move |s: &mut State, d: &mut rune::Drag, _tx: &mut Tx| set(s, d.x));
     let mut labels = row().w(w).gap(3.0);
     for (i, e) in EFFORTS.iter().enumerate() {
         labels = labels.child(el().w(cell).center().child(text(*e).font(SMALL).color(if i == idx { p.text } else { p.faint }))
-            .on_press(move |s: &mut State| {
-                if let Some(sess) = s.session_mut() {
-                    sess.set_thinking(EFFORTS[i]);
-                }
-            }));
+            .on_press(move |s: &mut State| s.set_effort(EFFORTS[i])));
     }
     col().gap(4.0).child(track).child(labels)
 }
@@ -245,9 +278,11 @@ fn agent_card(s: &State) -> El {
                 .on_press(move |s: &mut State| {
                     if s.current.is_none() || s.session().map(|x| x.items.is_empty()).unwrap_or(false) {
                         s.new_agent = a;
+                        (s.new_model, s.new_effort) = (None, None);
+                        let s2 = s.prefs.agent_defaults(a);
                         if let Some(x) = s.session_mut() {
                             x.agent = a;
-                            x.model = a.default_model().into();
+                            (x.model, x.thinking) = s2;
                         }
                     }
                     s.popover = Popover::None;

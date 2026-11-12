@@ -7,7 +7,7 @@ use super::{LABEL, SMALL, STRONG, button, frame, icon, pal};
 use crate::agents::ALL;
 use crate::session::Item;
 use crate::store::Prefs;
-use crate::{EFFORTS, State, View};
+use crate::{State, View};
 
 fn line(label: &str, hint: &str, control: El) -> El {
     let p = pal();
@@ -43,6 +43,15 @@ fn stepper(key: &'static str, value: String, dec: fn(&mut Prefs), inc: fn(&mut P
         .child(b(format!("{key}+"), "plus", inc))
 }
 
+/// Botão de dropdown: abre um popover ancorado abaixo dele.
+fn drop(key: String, label: String, pop: crate::Popover) -> El {
+    let p = pal();
+    row().key(key).h(26.0).px(8.0).gap(6.0).center_y().border(1.0, p.dim).hover(p.field)
+        .child(text(label).font(SMALL).color(p.text).grow(1.0).truncate())
+        .child(icon("chevron_down", p.dim))
+        .on_press(move |s: &mut State| s.popover = if s.popover == pop { crate::Popover::None } else { pop })
+}
+
 fn k(n: u32) -> String {
     format!("{}k", n / 1000)
 }
@@ -72,8 +81,6 @@ pub fn view(s: &State) -> El {
         .child(line("Gemini", "Google account OAuth (Gemini CLI flow), opens the browser", row().gap(8.0).center_y().child(status(on("google-gemini-cli")))
             .child(button("cfg-gemini", if on("google-gemini-cli") { "Sign in again" } else { "Sign in" })
                 .on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "google-gemini-cli"}))))))
-        .child(line("OpenRouter", "Sign in through omp", row().gap(8.0).center_y().child(status(on("openrouter")))
-            .child(button("cfg-or", "Sign in").on_press(|s: &mut State| s.util_send(json!({"type": "login", "providerId": "openrouter"}))))))
         .child(row().child(button("cfg-refresh", "Refresh status").on_press(|s: &mut State| s.util_send(json!({"type": "get_login_providers"})))));
     if let Some(u) = util {
         for (idx, it) in u.items.iter().enumerate() {
@@ -91,27 +98,16 @@ pub fn view(s: &State) -> El {
     // agentes
     let mut ag = col().gap(2.0).child(row().gap(10.0).py(2.0)
         .child(text("AGENT").font(SMALL).color(p.faint).w(110.0))
-        .child(text("MODEL").font(SMALL).color(p.faint).w(150.0))
-        .child(text("EFFORT").font(SMALL).color(p.faint).w(80.0))
+        .child(text("MODEL").font(SMALL).color(p.faint).w(170.0))
+        .child(text("EFFORT").font(SMALL).color(p.faint).w(90.0))
         .child(text("PROMPT").font(SMALL).color(p.faint)));
     for a in ALL {
         let (model, effort) = pr.agent_defaults(a);
         let name = a.name();
         ag = ag.child(row().key(format!("ag-{name}")).gap(10.0).h(30.0).center_y()
             .child(row().w(110.0).gap(8.0).center_y().child(super::sidebar::agent_square(a.icon(), 22.0, false)).child(text(name).font(LABEL).color(p.text)))
-            .child(el().w(150.0).child(button(format!("ag-m-{name}"), super::friendly_model(&model)).on_press(move |s: &mut State| {
-                let models = s.models();
-                if models.is_empty() { return; }
-                let (cur, _) = s.prefs.agent_defaults(a);
-                let i = models.iter().position(|m| m.0 == cur).map(|i| (i + 1) % models.len()).unwrap_or(0);
-                let next = models[i].0.clone();
-                set(s, |p| p.agents.entry(name.into()).or_default().0 = next);
-            })))
-            .child(el().w(80.0).child(button(format!("ag-e-{name}"), effort.clone()).on_press(move |s: &mut State| {
-                let (_, cur) = s.prefs.agent_defaults(a);
-                let i = EFFORTS.iter().position(|e| *e == cur).map(|i| (i + 1) % EFFORTS.len()).unwrap_or(1);
-                set(s, |p| p.agents.entry(name.into()).or_default().1 = EFFORTS[i].into());
-            })))
+            .child(el().w(170.0).child(drop(format!("ag-m-{name}"), super::friendly_model(&model), crate::Popover::AgentModel(a))))
+            .child(el().w(90.0).child(drop(format!("ag-e-{name}"), effort.clone(), crate::Popover::AgentEffort(a))))
             .child(button(format!("ag-p-{name}"), "Edit").on_press(move |_: &mut State| {
                 let _ = std::process::Command::new("xdg-open").arg(a.prompt_file()).spawn();
             })));

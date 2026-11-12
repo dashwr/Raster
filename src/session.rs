@@ -83,8 +83,6 @@ pub struct Session {
     pub pending_labels: Vec<(String, String)>,
     /// Provedores de login (id, nome, autenticado), da resposta a `get_login_providers`.
     pub providers: Vec<(String, String, bool)>,
-    /// Modelos que o omp valida com as credenciais atuais (provedor/id, nome), de `get_available_models`.
-    pub models: Vec<(String, String)>,
 }
 
 impl Session {
@@ -106,7 +104,6 @@ impl Session {
             subs: Vec::new(),
             pending_labels: Vec::new(),
             providers: Vec::new(),
-            models: Vec::new(),
         }
     }
 
@@ -277,15 +274,6 @@ impl Session {
             "response" if v["command"] == "get_login_providers" && v["success"] == true => {
                 self.providers = v["data"]["providers"].as_array().into_iter().flatten()
                     .map(|p| (p["id"].as_str().unwrap_or("").into(), p["name"].as_str().unwrap_or("").into(), p["authenticated"].as_bool().unwrap_or(false)))
-                    .collect();
-                let _ = self.send(json!({"type": "get_available_models"}));
-            }
-            "response" if v["command"] == "get_available_models" && v["success"] == true => {
-                self.models = v["data"]["models"].as_array().into_iter().flatten()
-                    .filter_map(|m| {
-                        let (prov, id) = (m["provider"].as_str()?, m["id"].as_str()?);
-                        Some((format!("{prov}/{id}"), m["name"].as_str().unwrap_or(id).to_string()))
-                    })
                     .collect();
             }
             "response" if v["command"] == "login" && v["success"] == true => {

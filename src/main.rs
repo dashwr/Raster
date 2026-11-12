@@ -58,6 +58,9 @@ pub enum Popover {
     Agent,
     Plus,
     Context,
+    /// Settings: modelo ou effort padrão de um agente.
+    AgentModel(Agent),
+    AgentEffort(Agent),
 }
 
 pub struct State {
@@ -95,6 +98,10 @@ pub struct State {
     /// Aurora do fundo do chat: quadro atual e se a thread deve animar (sessão atual pensando).
     pub aurora: Pixels,
     pub aurora_on: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Modelo e effort escolhidos na tela inicial, antes de a sessão existir.
+    pub new_model: Option<String>,
+    pub new_effort: Option<String>,
+    pub catalog_at: f64,
 }
 
 impl State {
@@ -132,6 +139,9 @@ impl State {
             fps: Default::default(),
             aurora: Pixels::new(),
             aurora_on: Default::default(),
+            new_model: None,
+            new_effort: None,
+            catalog_at: -100.0,
         };
         store::load(&mut s);
         s.composer.focused = true;
@@ -210,20 +220,47 @@ impl State {
         }
     }
 
-    /// Modelos de provedores com conexão ativa: a lista curada de Claude e Codex, mais os modelos
-    /// que o omp valida para os outros provedores logados (Gemini e afins).
+    /// Modelos com credencial válida, do catálogo que a extensão grava (`ompdsh/models.json`);
+    /// sem ele, a lista curada dos provedores conectados.
     pub fn models(&self) -> Vec<(String, String)> {
-        let (providers, dynamic) = self.util.as_ref().map(|u| (u.providers.clone(), u.models.clone())).unwrap_or_default();
-        let on = |prov: &str| (prov == "anthropic" && self.logged_in) || providers.iter().any(|p| p.0 == prov && p.2);
-        let mut out: Vec<(String, String)> = MODELS.iter().filter(|(id, _)| on(id.split('/').next().unwrap_or("")))
-            .map(|(a, b)| (a.to_string(), b.to_string())).collect();
-        for (id, name) in dynamic {
-            let prov = id.split('/').next().unwrap_or("");
-            if prov != "anthropic" && prov != "openai-codex" && on(prov) && !out.iter().any(|m| m.0 == id) {
-                out.push((id, name));
-            }
+        let cat = ui::catalog();
+        if !cat.is_empty() {
+            return cat;
         }
-        out
+        let providers = self.util.as_ref().map(|u| u.providers.clone()).unwrap_or_default();
+        let on = |prov: &str| (prov == "anthropic" && self.logged_in) || providers.iter().any(|p| p.0 == prov && p.2);
+        MODELS.iter().filter(|(id, _)| on(id.split('/').next().unwrap_or("")))
+            .map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+
+    pub fn cur_model(&self) -> String {
+        match self.session() {
+            Some(x) => x.model.clone(),
+            None => self.new_model.clone().unwrap_or_else(|| self.prefs.agent_defaults(self.new_agent).0),
+        }
+    }
+
+    pub fn cur_effort(&self) -> String {
+        match self.session() {
+            Some(x) => x.thinking.clone(),
+            None => self.new_effort.clone().unwrap_or_else(|| self.prefs.agent_defaults(self.new_agent).1),
+        }
+    }
+
+    pub fn set_model(&mut self, id: &str) {
+        match self.session_mut() {
+            Some(x) => x.set_model(id),
+            None => self.new_model = Some(id.into()),
+        }
+        store::save(self);
+    }
+
+    pub fn set_effort(&mut self, e: &str) {
+        match self.session_mut() {
+            Some(x) => x.set_thinking(e),
+            None => self.new_effort = Some(e.into()),
+        }
+        store::save(self);
     }
 
     pub fn new_session(&mut self) {
@@ -248,7 +285,8 @@ impl State {
             let id = self.next_id;
             self.next_id += 1;
             let mut x = Session::new(id, self.new_agent, self.cwd.clone());
-            (x.model, x.thinking) = self.prefs.agent_defaults(self.new_agent);
+            (x.model, x.thinking) = (self.cur_model(), self.cur_effort());
+            (self.new_model, self.new_effort) = (None, None);
             self.sessions.push(x);
             self.current = Some(id);
         }
@@ -275,6 +313,10 @@ fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
                 omp::Ev::Exited => sess.on_exit(),
             }
         }
+    }
+    if clock - s.catalog_at > 5.0 {
+        s.catalog_at = clock;
+        ui::reload_catalog();
     }
     let thinking = s.session().is_some_and(|x| x.status == Status::Working);
     s.aurora_on.store(thinking, std::sync::atomic::Ordering::Relaxed);
@@ -346,7 +388,7 @@ fn setup(s: &mut State, waker: rune::Waker) {
     swarm::watch(s.swarm.clone(), waker.clone());
     s.waker = Some(waker);
     s.sync_prefs();
-    ui::dither::animate(s.bg.clone(), 640, 400, s.fps.clone());
+    ui::dither::animate(s.bg.clone(), 1280, 800, s.fps.clone());
     ui::dither::animate_aurora(s.aurora.clone(), 320, 240, s.aurora_on.clone());
     s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
@@ -426,7 +468,7 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode)],
+        scenes: &[("demo", store::demo), ("demo-model", store::demo_model), ("demo-ctx", store::demo_ctx), ("demo-menu", store::demo_menu), ("demo-settings", store::demo_settings), ("demo-decode", store::demo_decode), ("demo-agent-model", store::demo_agent_model)],
         min_size: Some((820.0, 520.0)),
         ..AppSpec::new("Raster", (1280.0, 800.0), State::new, view)
     });

@@ -186,6 +186,11 @@ pub fn demo_menu(s: &mut State) {
     s.menu = Some(crate::Menu { x: 120.0, y: 220.0, target: crate::MenuTarget::Session(1) });
 }
 
+pub fn demo_agent_model(s: &mut State) {
+    demo_settings(s);
+    s.popover = crate::Popover::AgentModel(Agent::Code);
+}
+
 pub fn demo_settings(s: &mut State) {
     demo(s);
     s.view = crate::View::Configs;

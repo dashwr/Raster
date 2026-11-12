@@ -678,6 +678,19 @@ export default function ompDsh(pi: ExtensionAPI) {
 		await pi.setActiveTools([...activeTools().map(t => t.name), ...mcp]);
 	};
 	pi.on("session_start", syncTools);
+	// Raster: catálogo compacto dos modelos com credencial (o get_available_models do RPC passa do limite)
+	const writeModels = (ctx: any) => {
+		try {
+			const list = (ctx?.modelRegistry?.getAvailable?.() ?? []).map((m: any) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
+			if (list.length) fs.writeFileSync(path.join(ROOT, "models.json"), JSON.stringify(list));
+		} catch {}
+	};
+	if (DEPTH === 0) {
+		pi.on("session_start", (_e: any, ctx: any) => {
+			writeModels(ctx);
+			setTimeout(() => writeModels(ctx), 8000);
+		});
+	}
 	pi.on("before_agent_start", syncTools);
 	pi.on("agent_start", () => {
 		busy = true;
