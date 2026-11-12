@@ -69,10 +69,7 @@ pub fn view(s: &State) -> El {
                     .child(text(x.agent.glyph()).font(SMALL).color(x.agent.color()).w(16.0))
                     .child(text(x.title.clone()).font(LABEL).color(if sel { p.text } else { p.dim }).grow(1.0).truncate())
                     .child(text(mark).font(LABEL).color(mark_color))
-                    .on_press(move |s: &mut State| {
-                        s.current = Some(id);
-                        s.menu = None;
-                    })
+                    .on_press(move |s: &mut State| s.select(id))
                     .on_secondary_press(move |s: &mut State, at, _tx: &mut Tx| {
                         s.menu = Some(Menu { x: at.x, y: at.y, target: MenuTarget::Session(id) });
                     }),
@@ -94,7 +91,8 @@ pub fn view(s: &State) -> El {
     let login = if s.logged_in { "claude: login do Claude Code" } else { "claude: sem login" };
     let foot = col().key("foot").px(14.0).py(10.0).gap(6.0).border_sides([1.0, 0.0, 0.0, 0.0], p.line)
         .child(text(login).font(SMALL).color(p.faint).truncate())
-        .child(row().gap(8.0).child(text("⚙").font(LABEL).color(p.dim)).child(text("configs").font(LABEL).color(p.dim)));
+        .child(row().key("cfg-open").gap(8.0).hover(p.field).child(text("⚙").font(LABEL).color(p.dim)).child(text("configs").font(LABEL).color(p.dim))
+            .on_press(|s: &mut State| s.open_configs()));
 
     col().key("sidebar").w(W).h_full().fill(p.panel).border_sides([0.0, 1.0, 0.0, 0.0], p.line)
         .child(brand).child(new).child(search).child(filter)
@@ -124,7 +122,7 @@ pub fn context_menu(m: Menu) -> El {
     match m.target {
         MenuTarget::Session(id) => {
             menu = menu
-                .child(item("m-open", "abrir", Box::new(move |s, _| s.current = Some(id))))
+                .child(item("m-open", "abrir", Box::new(move |s, _| s.select(id))))
                 .child(item("m-stop", "encerrar sessão", Box::new(move |s, _| {
                     if let Some(x) = s.by_id(id) {
                         x.stop();

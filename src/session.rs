@@ -81,6 +81,8 @@ pub struct Session {
     pub seq: u64,
     pub subs: Vec<Sub>,
     pub pending_labels: Vec<(String, String)>,
+    /// Provedores de login (id, nome, autenticado), da resposta a `get_login_providers`.
+    pub providers: Vec<(String, String, bool)>,
 }
 
 impl Session {
@@ -101,6 +103,7 @@ impl Session {
             seq: 0,
             subs: Vec::new(),
             pending_labels: Vec::new(),
+            providers: Vec::new(),
         }
     }
 
@@ -268,6 +271,16 @@ impl Session {
                     self.items.push(Item::Error(m));
                 }
             }
+            "response" if v["command"] == "get_login_providers" && v["success"] == true => {
+                self.providers = v["data"]["providers"].as_array().into_iter().flatten()
+                    .map(|p| (p["id"].as_str().unwrap_or("").into(), p["name"].as_str().unwrap_or("").into(), p["authenticated"].as_bool().unwrap_or(false)))
+                    .collect();
+            }
+            "response" if v["command"] == "login" && v["success"] == true => {
+                self.items.push(Item::Notice(format!("login concluído: {}", v["data"]["providerId"].as_str().unwrap_or(""))));
+                let _ = self.send(json!({"type": "get_login_providers"}));
+            }
+            "response" if v["command"] == "get_messages" && v["success"] == true => self.restore(&v["data"]["messages"]),
             "response" if v["success"] == false => {
                 let m = v["error"].as_str().unwrap_or("comando recusado").to_string();
                 self.items.push(Item::Error(m));
@@ -354,6 +367,15 @@ impl Session {
                 }
                 return;
             }
+            "open_url" => {
+                let url = s("url");
+                let _ = std::process::Command::new("xdg-open").arg(&url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+                self.items.push(Item::Notice(format!("abri no navegador: {url}")));
+                if let Some(i) = v["instructions"].as_str() {
+                    self.items.push(Item::Notice(i.to_string()));
+                }
+                return;
+            }
             "notify" => {
                 self.items.push(Item::Notice(s("message")));
                 return;
@@ -376,6 +398,74 @@ impl Session {
         }
         let first = t.lines().next().unwrap_or("").chars().take(160).collect::<String>();
         self.items.push(Item::Notice(first));
+    }
+
+    /// Reconstrói a transcrição a partir de `get_messages` (sessão retomada).
+    fn restore(&mut self, msgs: &Value) {
+        let Some(list) = msgs.as_array() else { return };
+        let mut items = Vec::new();
+        for (i, m) in list.iter().enumerate() {
+            match m["role"].as_str() {
+                Some("user") => {
+                    let t = flat_text(&m["content"]);
+                    if is_injected(&t) {
+                        items.push(Item::Notice(t.lines().next().unwrap_or("").chars().take(160).collect()));
+                    } else if !t.is_empty() {
+                        items.push(Item::User(t));
+                    }
+                }
+                Some("assistant") => {
+                    let mut text = String::new();
+                    let mut calls = Vec::new();
+                    for b in m["content"].as_array().into_iter().flatten() {
+                        match b["type"].as_str() {
+                            Some("text") => text.push_str(b["text"].as_str().unwrap_or("")),
+                            Some("toolCall") => calls.push(ToolCall {
+                                id: b["id"].as_str().unwrap_or("").into(),
+                                name: b["name"].as_str().unwrap_or("").into(),
+                                summary: summarize(&b["arguments"]),
+                                output: String::new(),
+                                done: true,
+                                error: false,
+                            }),
+                            _ => {}
+                        }
+                    }
+                    if !text.is_empty() {
+                        items.push(Item::Assistant { mid: format!("r{i}"), text, thinking: String::new(), streaming: false });
+                    }
+                    if !calls.is_empty() {
+                        match items.last_mut() {
+                            Some(Item::Tools { calls: c, .. }) => c.extend(calls),
+                            _ => items.push(Item::Tools { calls, open: false }),
+                        }
+                    }
+                }
+                Some("toolResult") => {
+                    let id = m["toolCallId"].as_str().unwrap_or("");
+                    if let Some(Item::Tools { calls, .. }) = items.iter_mut().rev().find(|x| matches!(x, Item::Tools { .. }))
+                        && let Some(c) = calls.iter_mut().find(|c| c.id == id)
+                    {
+                        c.output = result_text(m);
+                        c.error = m["isError"].as_bool().unwrap_or(false);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !items.is_empty() {
+            self.items = items;
+        }
+    }
+
+    /// Abre o processo de uma sessão já iniciada e pede o histórico para redesenhar.
+    pub fn reopen(&mut self, inbox: &Inbox, waker: &Waker) {
+        if self.proc.is_some() || !self.started {
+            return;
+        }
+        if self.ensure_proc(inbox, waker).is_ok() {
+            let _ = self.send(json!({"type": "get_messages"}));
+        }
     }
 
     pub fn tool_count(&self) -> usize {

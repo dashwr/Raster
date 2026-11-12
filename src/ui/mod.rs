@@ -1,6 +1,7 @@
 //! Tema pixelized (preto e branco, raio zero, mono) e peças comuns da UI.
 
 pub mod composer;
+pub mod config;
 pub mod dither;
 pub mod panel;
 pub mod sidebar;

@@ -112,6 +112,13 @@ fn tools(s: &State, sid: u64, idx: usize, calls: &[crate::session::ToolCall], op
     c
 }
 
+pub fn ask_block(s: &State, sid: u64, idx: usize, it: &Item) -> El {
+    match it {
+        Item::Ask { kind, answer, .. } => ask(s, sid, idx, kind, answer.as_deref(), answer.is_none()),
+        _ => col(),
+    }
+}
+
 fn ask(s: &State, sid: u64, idx: usize, kind: &AskKind, answer: Option<&str>, active: bool) -> El {
     let p = pal();
     let mut box_ = col().w_full().max_w(640.0).px(14.0).py(12.0).gap(10.0).fill(p.panel)

@@ -40,6 +40,15 @@ pub struct Menu {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum View {
+    Chat,
+    Configs,
+}
+
+/// Id da sessão utilitária (login e status de provedores), fora da lista.
+pub const UTIL_ID: u64 = u64::MAX;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Popover {
     None,
     Model,
@@ -69,6 +78,8 @@ pub struct State {
     pub logged_in: bool,
     pub preview: Option<String>,
     pub swarm: swarm::Swarm,
+    pub view: View,
+    pub util: Option<Session>,
     pub time: std::sync::Arc<std::sync::Mutex<(u32, String)>>,
 }
 
@@ -97,6 +108,8 @@ impl State {
             logged_in: auth::claude_logged_in(),
             preview: None,
             swarm: Default::default(),
+            view: View::Chat,
+            util: None,
             time: Default::default(),
         };
         store::load(&mut s);
@@ -114,11 +127,44 @@ impl State {
     }
 
     pub fn by_id(&mut self, id: u64) -> Option<&mut Session> {
+        if id == UTIL_ID {
+            return self.util.as_mut();
+        }
         self.sessions.iter_mut().find(|x| x.id == id)
+    }
+
+    /// Manda um comando à sessão utilitária, subindo-a se preciso (modelo pequeno, sem prompt).
+    pub fn util_send(&mut self, v: serde_json::Value) {
+        let (inbox, waker) = (self.inbox.clone(), self.waker.clone().expect("waker"));
+        let u = self.util.get_or_insert_with(|| Session::new(UTIL_ID, Agent::Search, self.cwd.clone()));
+        if let Err(e) = u.ensure_proc(&inbox, &waker) {
+            u.items.push(session::Item::Error(e));
+            return;
+        }
+        let _ = u.send(v);
+    }
+
+    pub fn open_configs(&mut self) {
+        self.view = View::Configs;
+        self.util_send(serde_json::json!({"type": "get_login_providers"}));
+    }
+
+    /// Seleciona uma sessão; se já tinha histórico e está encerrada, reabre para redesenhar.
+    pub fn select(&mut self, id: u64) {
+        self.current = Some(id);
+        self.view = View::Chat;
+        self.menu = None;
+        let (inbox, waker) = (self.inbox.clone(), self.waker.clone());
+        if let (Some(x), Some(w)) = (self.by_id(id), waker)
+            && x.items.len() <= 1
+        {
+            x.reopen(&inbox, &w);
+        }
     }
 
     pub fn new_session(&mut self) {
         self.current = None;
+        self.view = View::Chat;
         self.composer.clear();
         self.composer.focused = true;
     }
@@ -202,13 +248,13 @@ fn on_key(s: &mut State, k: &rune::KeyEvent, _tx: &mut Tx) -> bool {
 
 fn view(s: &State, cx: &mut Cx<State>) -> El {
     let p = ui::pal();
-    let center = match s.session() {
-        Some(sess) => ui::transcript::view(s, sess, cx),
-        None => ui::transcript::welcome(s),
+    let main = match (s.view, s.session()) {
+        (View::Configs, _) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg).child(ui::config::view(s)),
+        (View::Chat, Some(sess)) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg)
+            .child(ui::transcript::view(s, sess, cx)).child(ui::composer::view(s)),
+        (View::Chat, None) => col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg)
+            .child(ui::transcript::welcome(s)).child(ui::composer::view(s)),
     };
-    let main = col().key("main").grow(1.0).h_full().min_w(0.0).fill(p.bg)
-        .child(center)
-        .child(ui::composer::view(s));
     let mut root = row().key("root").w_full().h_full().fill(p.frame)
         .child(ui::sidebar::view(s))
         .child(main)
