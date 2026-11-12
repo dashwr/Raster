@@ -74,17 +74,17 @@ pub fn aurora(w: u32, h: u32, cell: u32, t: f32, out: &mut Vec<u8>) {
         let u = gx as f32 / gw as f32;
         let curtain = |phase: f32, center: f32, amp: f32| {
             let c = center + amp * (u * 5.0 + t * 0.35 + phase).sin() + amp * 0.5 * (u * 11.0 - t * 0.5 + phase).sin();
-            let rays = 0.55 + 0.45 * (u * 47.0 + t * 0.9 + phase * 3.0).sin() * (u * 23.0 - t * 0.4).cos();
+            let rays = (0.5 + 0.5 * (u * 140.0 + t * 0.9 + phase * 3.0).sin() * (u * 61.0 - t * 0.4).cos()).powi(2);
             (c, rays)
         };
-        let bands = [curtain(0.0, 0.30, 0.08), curtain(2.1, 0.48, 0.06), curtain(4.2, 0.20, 0.05)];
+        let bands = [curtain(0.0, 0.30, 0.07), curtain(2.1, 0.50, 0.05), curtain(4.2, 0.18, 0.04)];
         for gy in 0..gh {
             let v = gy as f32 / gh as f32;
             let mut l = 0.0f32;
             for (i, (c, rays)) in bands.iter().enumerate() {
                 // cortina: borda de baixo nítida, cauda longa para cima
                 let d = v - c;
-                let k = if d > 0.0 { (-(d * d) / 0.002).exp() } else { (d / 0.18).exp() };
+                let k = if d > 0.0 { (-(d * d) / 0.0004).exp() } else { (d / 0.07).exp() };
                 l += k * rays * [0.55, 0.4, 0.3][i];
             }
             let l = (l * (0.85 + 0.15 * (t * 0.7).sin())).clamp(0.0, 1.0);
@@ -109,7 +109,7 @@ pub fn animate_aurora(px: Pixels, w: u32, h: u32, on: std::sync::Arc<std::sync::
         let mut buf = Vec::new();
         loop {
             if on.load(std::sync::atomic::Ordering::Relaxed) {
-                aurora(w, h, 2, start.elapsed().as_secs_f32(), &mut buf);
+                aurora(w, h, 1, start.elapsed().as_secs_f32(), &mut buf);
                 px.set(w, h, buf.clone());
                 std::thread::sleep(std::time::Duration::from_millis(100));
             } else {

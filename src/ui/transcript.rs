@@ -29,7 +29,7 @@ pub fn item_text(i: &Item) -> String {
 pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
     let p = pal();
     let sid = sess.id;
-    let mut list = col().key(format!("tx-{sid}")).w_full().px(22.0).py(18.0).gap(14.0);
+    let mut list = col().key(format!("tx-{sid}")).w_full().px(16.0).py(12.0).gap(12.0);
     let el_t = s.clock - s.decode_t0;
     let fr = super::decode::frame(s.clock);
     let dec_at = |t: &str, base: f64| super::decode::reveal(t, el_t, base, fr);
@@ -40,8 +40,8 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
         let dec = |t: &str| dec_at(t, base);
         let node = match it {
             Item::User(t) => row().w_full().justify_end().child(
-                super::hard(el().max_w(560.0).px(12.0).py(8.0).fill(p.text), 4.0, p.dim)
-                    .child(text(dec(t)).font(super::body(s)).color(p.bg).wrap().selectable(true)),
+                super::hard(el().max_w(560.0).min_w(0.0).px(12.0).py(8.0).fill(p.text), 4.0, p.dim)
+                    .child(text(dec(t)).font(super::body(s)).color(p.bg).wrap_anywhere().selectable(true)),
             ),
             Item::Assistant { text: t, thinking, streaming, .. } => {
                 let mut c = col().w_full().gap(6.0);
@@ -58,8 +58,8 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
             }
             Item::Tools { calls, open } => tools(s, sid, idx, calls, *open, sess.status == Status::Working && idx + 1 == sess.items.len()),
             Item::Ask { kind, answer, .. } => ask(s, sid, idx, kind, answer.as_deref(), Some(idx) == last_ask),
-            Item::Notice(t) => row().gap(6.0).child(icon("info", p.faint)).child(text(dec(t)).font(SMALL).color(p.faint).wrap()),
-            Item::Error(t) => row().px(10.0).py(6.0).gap(8.0).border(1.0, p.text).child(icon("error", p.text)).child(text(dec(t)).font(LABEL).color(p.text).wrap().selectable(true)),
+            Item::Notice(t) => row().w_full().gap(6.0).child(icon("info", p.faint)).child(text(dec(t)).font(SMALL).color(p.faint).wrap_anywhere().grow(1.0).min_w(0.0)),
+            Item::Error(t) => row().w_full().px(10.0).py(6.0).gap(8.0).border(1.0, p.text).child(icon("error", p.text)).child(text(dec(t)).font(LABEL).color(p.text).wrap_anywhere().grow(1.0).min_w(0.0).selectable(true)),
         };
         list = list.child(
             node.key(format!("it-{sid}-{idx}")).on_secondary_press(move |s: &mut State, at, _tx: &mut Tx| {
@@ -74,7 +74,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
                 .child(text(format!("{}…", super::decode::thinking(s.clock))).font(LABEL).color(p.dim)),
         );
     }
-    col().key("transcript").grow(1.0).min_h(0.0).w_full().gap(16.0)
+    col().key("transcript").grow(1.0).min_h(0.0).w_full().gap(8.0)
         .child(header(sess, &dec))
         .child(super::float(el().key("tx-frame").grow(1.0).min_h(0.0).w_full())
             .child(el().key("aurora").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.aurora, rune::SurfaceFit::Fill)

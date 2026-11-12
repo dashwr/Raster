@@ -123,6 +123,13 @@ function shapePayload(p: any): any {
 		if (!Array.isArray(m.content)) continue;
 		for (const b of m.content) if (b.type === "tool_use" && typeof b.name === "string") b.name = stripPrefix(b.name);
 	}
+	// mensagens `system` no meio do histórico (o omp grava uma ao trocar modelo ou effort) não são
+	// aceitas pela API da Anthropic: vazias saem, com texto viram aviso do usuário
+	p.messages = p.messages.flatMap((m: any) => {
+		if (m.role !== "system") return [m];
+		const t = typeof m.content === "string" ? m.content : (Array.isArray(m.content) ? m.content : []).filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n");
+		return t.trim() ? [{ role: "user", content: [{ type: "text", text: `<system-notice>\n${t}\n</system-notice>` }] }] : [];
+	});
 	// Raster: poda dinâmica (DCP) só na raiz; filhos são curtos
 	if (DEPTH === 0) p.messages = dcp().apply(p.messages, VAULT_NUDGE);
 	const first = p.messages[0];

@@ -143,7 +143,8 @@ impl Session {
         p.send(&v).map_err(|e| e.to_string())
     }
 
-    pub fn prompt(&mut self, text: String, inbox: &Inbox, waker: &Waker) {
+    /// `images`: (mime, base64) anexadas à mensagem.
+    pub fn prompt(&mut self, text: String, images: Vec<(String, String)>, inbox: &Inbox, waker: &Waker) {
         if self.title.starts_with("sessão ") && !text.trim().is_empty() {
             self.title = text.trim().lines().next().unwrap_or("").chars().take(40).collect();
         }
@@ -154,11 +155,11 @@ impl Session {
         }
         self.started = true;
         let behaviour = if self.status == Status::Working { "steer" } else { "prompt" };
-        let msg = if behaviour == "steer" {
-            json!({"type": "steer", "message": text})
-        } else {
-            json!({"type": "prompt", "message": text})
-        };
+        let imgs: Vec<_> = images.iter().map(|(m, d)| json!({"type": "image", "mimeType": m, "data": d})).collect();
+        let mut msg = json!({"type": behaviour, "message": text});
+        if !imgs.is_empty() {
+            msg["images"] = json!(imgs);
+        }
         if let Err(e) = self.send(msg) {
             self.items.push(Item::Error(e));
         } else {
@@ -565,5 +566,41 @@ mod tests {
         let mut s = sess();
         s.on_frame(json!({"type": "prompt_result", "status": "error", "error": {"message": "401", "retryable": false}}));
         assert!(matches!(&s.items[0], Item::Error(m) if m == "401"));
+    }
+}
+
+/// Base64 padrão (com `=`), para imagens anexadas.
+pub fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for (i, sh) in [18, 12, 6, 0].into_iter().enumerate() {
+            out.push(if i <= c.len() { T[(n >> sh & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// Tipo de imagem pela extensão; `None` para o que não é imagem.
+pub fn image_mime(p: &std::path::Path) -> Option<&'static str> {
+    match p.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod b64_tests {
+    #[test]
+    fn base64_matches_rfc4648() {
+        assert_eq!(super::base64(b""), "");
+        assert_eq!(super::base64(b"f"), "Zg==");
+        assert_eq!(super::base64(b"fo"), "Zm8=");
+        assert_eq!(super::base64(b"foo"), "Zm9v");
+        assert_eq!(super::base64(b"foobar"), "Zm9vYmFy");
     }
 }

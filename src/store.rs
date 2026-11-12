@@ -162,8 +162,8 @@ pub fn demo(s: &mut State) {
     s.current = Some(1);
     s.decode_t0 = -10.0;
     let mut buf = Vec::new();
-    crate::ui::dither::aurora(320, 240, 2, 3.0, &mut buf);
-    s.aurora.set(320, 240, buf);
+    crate::ui::dither::aurora(800, 600, 1, 3.0, &mut buf);
+    s.aurora.set(800, 600, buf);
 }
 
 pub fn demo_decode(s: &mut State) {

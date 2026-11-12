@@ -28,7 +28,7 @@ pub fn agent_square(name: &str, size: f32, on: bool) -> El {
 
 pub fn view(s: &State) -> El {
     let p = pal();
-    let brand = row().key("brand").px(14.0).pt(16.0).pb(10.0).gap(8.0).center_y()
+    let brand = row().key("brand").px(12.0).pt(10.0).pb(4.0).gap(8.0).center_y()
         .child(text("RASTER").font(BRAND).color(p.text))
         .child(text(concat!("v", env!("CARGO_PKG_VERSION"))).font(SMALL).color(p.dim))
         .help(crate::VERSION);

@@ -133,6 +133,9 @@ pub fn reload_catalog() {
     let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) else { return };
     let list: Vec<(String, String)> = v.iter().filter_map(|m| {
         let (p, id) = (m["provider"].as_str()?, m["id"].as_str()?);
+        if p == "openrouter" {
+            return None;
+        }
         Some((format!("{p}/{id}"), m["name"].as_str().unwrap_or(id).to_string()))
     }).collect();
     if let Ok(mut c) = CATALOG.write() {
@@ -246,7 +249,7 @@ pub fn hard(e: El, d: f32, color: Color) -> El {
 /// Painel solto do float: fundo preto, borda clara e sombra branca dura.
 pub fn float(e: El) -> El {
     let p = pal();
-    hard(e.fill(p.bg).border(1.0, p.text), 6.0, p.text)
+    hard(e.fill(p.bg).border(1.0, p.text), 4.0, p.text)
 }
 
 /// Caixa com título na borda (estilo box).

@@ -36,6 +36,19 @@ pub fn view(s: &State) -> El {
     let field = text_input(&s.composer, super::body(s)).key("composer").w_full()
         .placeholder(format!("Message {}…", agent.name()), p.faint).color(p.text)
         .on_edit(|s: &mut State| &mut s.composer)
+        .on_input_paste(|s: &mut State, c: &rune::ClipboardContent, _tx: &mut Tx| {
+            if !c.files().is_empty() {
+                s.attachments.extend_from_slice(c.files());
+                return true;
+            }
+            let Some(img) = c.image() else { return false };
+            let dir = crate::omp::state_dir().join("pastes");
+            let path = dir.join(format!("paste-{}.png", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
+            if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&path, img.png()).is_ok() {
+                s.attachments.push(path);
+            }
+            true
+        })
         .on_input_key(|s: &mut State, k: &rune::KeyEvent, _tx: &mut Tx| {
             if matches!(k.key, rune::Key::Enter) && !k.mods.shift {
                 s.submit();
@@ -94,6 +107,7 @@ pub fn view(s: &State) -> El {
         .child(auto_grow(field, 1, 8))
         .child(bar);
     col().key("composer-wrap").w_full().child(box_)
+        .on_drop_files(|s: &mut State, files: &[std::path::PathBuf], _tx: &mut Tx| s.attachments.extend_from_slice(files))
 }
 
 /// Partes do contexto (rótulo, padrão, tokens). Mensagens e saída de ferramentas são estimadas pelo

@@ -198,7 +198,8 @@ impl State {
 
     /// Aplica as preferências que vivem na UI (as do runtime vão por env no spawn).
     pub fn sync_prefs(&mut self) {
-        let f = if self.prefs.dither { self.prefs.fps } else { 0 };
+        let chat = self.view == View::Chat && self.current.is_some();
+        let f = if self.prefs.dither && !chat { self.prefs.fps } else { 0 };
         self.fps.store(f, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -277,8 +278,15 @@ impl State {
         if text.is_empty() {
             return;
         }
+        let mut images = Vec::new();
         for a in self.attachments.drain(..) {
-            text.push_str(&format!("\n@{}", a.display()));
+            match (session::image_mime(&a), std::fs::read(&a)) {
+                (Some(mime), Ok(bytes)) => {
+                    text.push_str(&format!("\n[image: {}]", a.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
+                    images.push((mime.to_string(), session::base64(&bytes)));
+                }
+                _ => text.push_str(&format!("\n@{}", a.display())),
+            }
         }
         self.composer.clear();
         if self.current.is_none() {
@@ -292,7 +300,7 @@ impl State {
         }
         let (inbox, waker) = (self.inbox.clone(), self.waker.clone().expect("waker"));
         if let Some(s) = self.session_mut() {
-            s.prompt(text, &inbox, &waker);
+            s.prompt(text, images, &inbox, &waker);
         }
         store::save(self);
     }
@@ -314,6 +322,7 @@ fn poll(s: &mut State, clock: f64, tx: &mut Tx) -> bool {
             }
         }
     }
+    s.sync_prefs();
     if clock - s.catalog_at > 5.0 {
         s.catalog_at = clock;
         ui::reload_catalog();
@@ -360,17 +369,18 @@ fn on_key(s: &mut State, k: &rune::KeyEvent, _tx: &mut Tx) -> bool {
 fn view(s: &State, cx: &mut Cx<State>) -> El {
     let main = match (s.view, s.session()) {
         (View::Configs, _) => col().key("main").grow(1.0).h_full().min_w(0.0).child(ui::config::view(s)),
-        (View::Chat, Some(sess)) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(16.0)
+        (View::Chat, Some(sess)) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(8.0)
             .child(ui::transcript::view(s, sess, cx)).child(ui::composer::view(s)),
-        (View::Chat, None) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(16.0)
+        (View::Chat, None) => col().key("main").grow(1.0).h_full().min_w(0.0).gap(8.0)
             .child(ui::transcript::welcome(s)).child(ui::composer::view(s)),
     };
-    let body = row().key("body").absolute(0.0, 0.0).w_full().h_full().px(18.0).pt(18.0).pb(24.0).gap(22.0)
+    let body = row().key("body").absolute(0.0, 0.0).w_full().h_full().pl(6.0).pr(10.0).pt(6.0).pb(10.0).gap(10.0)
         .child(ui::sidebar::view(s))
         .child(main)
         .child(ui::panel::view(s));
     let mut root = el().key("root").w_full().h_full().fill(ui::pal().bg);
-    if s.prefs.dither {
+    // campo animado só na tela inicial e no Settings; durante o chat o fundo é preto
+    if s.prefs.dither && !(s.view == View::Chat && s.current.is_some()) {
         root = root.child(el().key("field").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.bg, rune::SurfaceFit::Fill).opacity(0.5));
     }
     let mut root = root.child(body);
@@ -389,7 +399,7 @@ fn setup(s: &mut State, waker: rune::Waker) {
     s.waker = Some(waker);
     s.sync_prefs();
     ui::dither::animate(s.bg.clone(), 1280, 800, s.fps.clone());
-    ui::dither::animate_aurora(s.aurora.clone(), 320, 240, s.aurora_on.clone());
+    ui::dither::animate_aurora(s.aurora.clone(), 800, 600, s.aurora_on.clone());
     s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
 
@@ -409,7 +419,7 @@ fn probe(msg: String) -> ! {
     let waker: omp::Waker = std::sync::Arc::new(|| {});
     let mut sess = Session::new(0, agent, launch_dir());
     sess.thinking = "low".into();
-    sess.prompt(msg, &inbox, &waker);
+    sess.prompt(msg, Vec::new(), &inbox, &waker);
     let t0 = std::time::Instant::now();
     let mut saw_work = false;
     while t0.elapsed().as_secs() < 300 {
