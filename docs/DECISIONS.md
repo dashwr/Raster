@@ -27,5 +27,5 @@ O basic-memory entra por `~/.raster/agent/mcp.json`. Por isso a sessão raiz sob
 - Ícones pixel 16x16 em `assets/icons/icons.txt` (gerados por `tools/icons.py`); swarm usa 8 gatos fixos por subagente, estado no ícone abaixo.
 - Popovers ancorados (`El::anchored`) ao botão; modelos filtrados por provedor conectado; effort `low..max`.
 - Decodificação ASCII (`src/ui/decode.rs`) em streaming, frases de thinking e troca de conversa.
-- Settings em `~/.raster/prefs.json`. Ligados ao runtime: save reminder, limites do DCP, modelo/effort por agente. Pendentes de ligação: sub_invoke, max_parallel, vault on/off, vault_first, dcp_every, dedup, rtk, ask_destructive, ask_timeout, dither/fps/font, ripples.
+- Settings em `~/.raster/prefs.json`, passados ao omp por env no spawn (`RASTER_*`, valem para sessões abertas depois da mudança): vault e lembrete, vault antes da web, DCP (limites, frequência, dedup), rtk, confirmação de comando destrutivo (`ui.confirm` com timeout), timeout de pergunta, máximo de subagentes em paralelo, profundidade 2 quando subagentes podem invocar outros, modelo/effort por agente. Dither, fps e fonte do corpo valem na hora.
 - Contexto: mensagens e saída de ferramentas são estimadas (4 chars/token); "compressed" ainda sem fonte de dados.

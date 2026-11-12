@@ -87,6 +87,8 @@ pub struct State {
     pub decode_t0: f64,
     pub attachments: Vec<PathBuf>,
     pub prefs: store::Prefs,
+    /// Quadros por segundo do campo de fundo (0 = parado), lido pela thread do dither.
+    pub fps: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl State {
@@ -121,6 +123,7 @@ impl State {
             decode_t0: 0.0,
             attachments: Vec::new(),
             prefs: store::Prefs::load(),
+            fps: Default::default(),
         };
         store::load(&mut s);
         s.composer.focused = true;
@@ -173,6 +176,12 @@ impl State {
         {
             x.reopen(&inbox, &w);
         }
+    }
+
+    /// Aplica as preferências que vivem na UI (as do runtime vão por env no spawn).
+    pub fn sync_prefs(&mut self) {
+        let f = if self.prefs.dither { self.prefs.fps } else { 0 };
+        self.fps.store(f, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn start_rename(&mut self, id: u64) {
@@ -301,9 +310,11 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
         .child(ui::sidebar::view(s))
         .child(main)
         .child(ui::panel::view(s));
-    let mut root = el().key("root").w_full().h_full().fill(ui::pal().bg)
-        .child(el().key("field").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.bg, rune::SurfaceFit::Fill).opacity(0.5))
-        .child(body);
+    let mut root = el().key("root").w_full().h_full().fill(ui::pal().bg);
+    if s.prefs.dither {
+        root = root.child(el().key("field").absolute(0.0, 0.0).w_full().h_full().pixels_fit(&s.bg, rune::SurfaceFit::Fill).opacity(0.5));
+    }
+    let mut root = root.child(body);
     if s.popover != Popover::None {
         root = root.child(ui::composer::popover(s));
     }
@@ -317,7 +328,8 @@ fn setup(s: &mut State, waker: rune::Waker) {
     ui::transcript::tick_clock(s.time.clone(), waker.clone());
     swarm::watch(s.swarm.clone(), waker.clone());
     s.waker = Some(waker);
-    ui::dither::animate(s.bg.clone(), 640, 400);
+    s.sync_prefs();
+    ui::dither::animate(s.bg.clone(), 640, 400, s.fps.clone());
     s.util_send(serde_json::json!({"type": "get_login_providers"}));
 }
 

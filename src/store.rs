@@ -34,7 +34,6 @@ pub struct Prefs {
     pub ask_destructive: bool,
     pub ask_timeout: u32,
     pub dither: bool,
-    pub ripples: bool,
     pub fps: u32,
     pub font: u32,
     /// Modelo e effort padrão por agente (nome → (modelo, effort)); vazio usa o padrão do agente.
@@ -47,7 +46,7 @@ impl Default for Prefs {
             sub_invoke: true, max_parallel: 4, vault: true, vault_nudge: true, vault_first: true,
             dcp_soft: 50_000, dcp_hard: 100_000, dcp_every: 5, dcp_dedup: true,
             rtk: true, ask_destructive: true, ask_timeout: 120,
-            dither: true, ripples: true, fps: 8, font: 13, agents: Default::default(),
+            dither: true, fps: 8, font: 13, agents: Default::default(),
         }
     }
 }

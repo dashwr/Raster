@@ -21,6 +21,7 @@ fn line(label: &str, hint: &str, control: El) -> El {
 fn set(s: &mut State, f: impl FnOnce(&mut Prefs)) {
     f(&mut s.prefs);
     s.prefs.save();
+    s.sync_prefs();
 }
 
 /// Switch on · off no mesmo desenho do active · all.
@@ -140,9 +141,8 @@ pub fn view(s: &State) -> El {
 
     c = c.child(frame("f-look", "appearance", col().gap(2.0)
         .child(line("Dither field", "Animated background", switch("sw-dither", pr.dither, |p| p.dither = !p.dither)))
-        .child(line("Ripples", "Click feedback", switch("sw-rip", pr.ripples, |p| p.ripples = !p.ripples)))
         .child(line("Field fps", "Background frame rate", stepper("st-fps", pr.fps.to_string(), |p| p.fps = p.fps.saturating_sub(2).max(2), |p| p.fps = (p.fps + 2).min(30))))
-        .child(line("Font size", "Body text", stepper("st-font", format!("{} px", pr.font), |p| p.font = p.font.saturating_sub(1).max(10), |p| p.font = (p.font + 1).min(18))))));
+        .child(line("Font size", "Transcript and composer text", stepper("st-font", format!("{} px", pr.font), |p| p.font = p.font.saturating_sub(1).max(10), |p| p.font = (p.font + 1).min(18))))));
 
     let st = crate::omp::state_dir();
     c = c.child(frame("f-paths", "paths", col().gap(4.0)

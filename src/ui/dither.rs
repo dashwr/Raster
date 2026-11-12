@@ -48,15 +48,18 @@ pub fn render(w: u32, h: u32, cell: u32, t: f32, out: &mut Vec<u8>) {
     }
 }
 
-/// Anima o campo numa thread própria, a ~8 quadros por segundo.
-pub fn animate(px: Pixels, w: u32, h: u32) {
+/// Anima o campo numa thread própria a `fps` quadros por segundo; 0 pausa.
+pub fn animate(px: Pixels, w: u32, h: u32, fps: std::sync::Arc<std::sync::atomic::AtomicU32>) {
     std::thread::spawn(move || {
         let start = std::time::Instant::now();
         let mut buf = Vec::new();
         loop {
-            render(w, h, 3, start.elapsed().as_secs_f32(), &mut buf);
-            px.set(w, h, buf.clone());
-            std::thread::sleep(std::time::Duration::from_millis(125));
+            let f = fps.load(std::sync::atomic::Ordering::Relaxed);
+            if f > 0 || buf.is_empty() {
+                render(w, h, 3, start.elapsed().as_secs_f32(), &mut buf);
+                px.set(w, h, buf.clone());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(if f > 0 { 1000 / f as u64 } else { 250 }));
         }
     });
 }

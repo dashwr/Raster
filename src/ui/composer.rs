@@ -3,7 +3,7 @@
 
 use rune::{Align, El, Side, TextEdit, Tx, auto_grow, col, el, row, text, text_input};
 
-use super::{BODY, Dither, LABEL, SMALL, dither, friendly_model, icon, pal};
+use super::{Dither, LABEL, SMALL, dither, friendly_model, icon, pal};
 use crate::agents::{ALL, Agent};
 use crate::session::{Item, Status};
 use crate::{EFFORTS, Popover, State};
@@ -33,7 +33,7 @@ pub fn view(s: &State) -> El {
     let agent = current_agent(s);
     let model = current_model(s);
 
-    let field = text_input(&s.composer, BODY).key("composer").w_full()
+    let field = text_input(&s.composer, super::body(s)).key("composer").w_full()
         .placeholder(format!("Message {}…", agent.name()), p.faint).color(p.text)
         .on_edit(|s: &mut State| &mut s.composer)
         .on_input_key(|s: &mut State, k: &rune::KeyEvent, _tx: &mut Tx| {
@@ -293,7 +293,7 @@ fn plus_card(_s: &State) -> El {
                 .on_press(move |s: &mut State| {
                     let t = s.composer.text.clone();
                     let sep = if t.is_empty() || t.ends_with(' ') { "" } else { " " };
-                    s.composer = TextEdit::new(&format!("{t}{sep}@{n2} "));
+                    s.composer = TextEdit::new(format!("{t}{sep}@{n2} "));
                     s.composer.focused = true;
                     s.popover = Popover::None;
                 }),

@@ -10,6 +10,8 @@ const MIN = Number(process.env.RASTER_DCP_MIN ?? 50_000);
 const MAX = Number(process.env.RASTER_DCP_MAX ?? 100_000);
 const FREQ = Number(process.env.RASTER_DCP_FREQ ?? 5);
 const ITER = Number(process.env.RASTER_DCP_ITER ?? 15);
+const DEDUP = process.env.RASTER_DCP_DEDUP !== "0";
+const VAULT_FIRST = process.env.RASTER_VAULT_FIRST !== "0";
 const PURGE_TURNS = 4;
 const DEDUP_SKIP = new Set(["write", "edit", "todo_write", "compress", "subagent", "subagent_fork", "send_message", "ask_user", "create_goal", "update_goal"]);
 
@@ -43,7 +45,7 @@ export class Dcp {
 		}
 		this.blocks = this.blocks.filter(b => b.end < raw.length);
 		const msgs = structuredClone(raw);
-		dedup(msgs);
+		if (DEDUP) dedup(msgs);
 		purgeErrors(msgs);
 		// ids nas mensagens de usuário (posição no histórico bruto; estável enquanto ele só cresce)
 		this.lastIds = [];
@@ -87,7 +89,7 @@ export class Dcp {
 			parts.push("You've been iterating for a while since the last user message. If a closed portion is unlikely to be referenced soon (e.g. finished research before implementation), `compress` it now.");
 		}
 		if (vault && sinceUser === 0) {
-			parts.push("Memory: if this turn produced something durable (a decision, a verified procedure, a bug cause, a user preference), record it in the vault (basic-memory). When unsure about the user or their projects, search the vault first; if it is not there, search the web.");
+			parts.push(`Memory: if this turn produced something durable (a decision, a verified procedure, a bug cause, a user preference), record it in the vault (basic-memory).${VAULT_FIRST ? " When unsure about the user or their projects, search the vault first; if it is not there, search the web." : ""}`);
 		}
 		return parts.length ? `<raster-reminder>\n${parts.join("\n\n")}\n</raster-reminder>` : undefined;
 	}

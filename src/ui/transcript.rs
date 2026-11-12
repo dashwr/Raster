@@ -38,7 +38,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
         let node = match it {
             Item::User(t) => row().w_full().justify_end().child(
                 super::hard(el().max_w(560.0).px(12.0).py(8.0).fill(p.text), 4.0, p.dim)
-                    .child(text(dec(t)).font(BODY).color(p.bg).wrap().selectable(true)),
+                    .child(text(dec(t)).font(super::body(s)).color(p.bg).wrap().selectable(true)),
             ),
             Item::Assistant { text: t, thinking, streaming, .. } => {
                 let mut c = col().w_full().gap(6.0);
@@ -47,7 +47,7 @@ pub fn view(s: &State, sess: &Session, _cx: &mut Cx<State>) -> El {
                     c = c.child(row().gap(6.0).child(icon("thinking", p.faint)).child(text(dec(&first)).font(SMALL).color(p.faint).truncate()));
                 }
                 if !t.is_empty() {
-                    let style = MarkdownStyle::from_kit(kit()).diagram_max_width(640.0);
+                    let style = MarkdownStyle::from_kit(kit()).diagram_max_width(640.0).body_font(super::body(s));
                     let shown = if *streaming { super::decode::streaming(t, s.clock) } else { dec(t) };
                     c = c.child(Markdown::new(shown).style(style).streaming(*streaming).build(kit()));
                 }

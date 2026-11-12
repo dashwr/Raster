@@ -41,6 +41,12 @@ pub fn pal() -> &'static Pal {
     })
 }
 
+/// Texto do corpo no tamanho escolhido em Settings.
+pub fn body(s: &crate::State) -> TextStyle {
+    let f = s.prefs.font as f32;
+    TextStyle::new(f, 400.0).lh(f + 6.0)
+}
+
 pub const BODY: TextStyle = TextStyle::new(13.0, 400.0).lh(19.0);
 pub const SMALL: TextStyle = TextStyle::new(11.0, 400.0).lh(15.0);
 pub const LABEL: TextStyle = TextStyle::new(12.0, 400.0).lh(16.0);

@@ -17,10 +17,17 @@ const MODEL_ID = MODEL_SEL.split("/").pop() ?? "";
 const SYSTEM = [fs.readFileSync(path.join(HERE, "system.txt"), "utf8").replace("{{model}}", MODEL_ID),
 	...(process.env.RASTER_PROMPT_FILES ?? "").split(":").filter(Boolean).map(f => fs.readFileSync(f, "utf8").trim())].join("\n\n");
 const KEEPALIVE = process.env.RASTER_KEEPALIVE === "1";
-const VAULT_NUDGE = process.env.RASTER_VAULT_NUDGE === "1";
+const VAULT = process.env.RASTER_VAULT !== "0";
+const VAULT_NUDGE = VAULT && process.env.RASTER_VAULT_NUDGE === "1";
+const MAX_PARALLEL = Number(process.env.RASTER_MAX_PARALLEL ?? 4);
+const ASK_TIMEOUT_MS = Number(process.env.RASTER_ASK_TIMEOUT ?? 120) * 1000;
+const ASK_DESTRUCTIVE = process.env.RASTER_ASK_DESTRUCTIVE === "1";
+const DESTRUCTIVE = /\b(rm\s|rmdir\b|shred\b|mkfs|dd\s+if=|git\s+(reset\s+--hard|clean\s+-[a-z]*f|push\s+.*(--force|-f\b)|branch\s+-D|checkout\s+--\s)|truncate\s|>\s*\/dev\/sd|chmod\s+-R|chown\s+-R|kill(all)?\s|pkill\s|drop\s+(table|database))/i;
+/** MCP visível na raiz; o vault (basic-memory) sai quando desligado no Settings. */
+const mcpAllowed = (n: string) => n.startsWith("mcp__") && (VAULT || !n.startsWith("mcp__basic-memory"));
 const TOOLS: any[] = JSON.parse(fs.readFileSync(path.join(HERE, "tools.json"), "utf8"));
 const DEPTH = Number(process.env.OMPDSH_DEPTH ?? 0);
-const MAX_DEPTH = 1;
+const MAX_DEPTH = Number(process.env.RASTER_MAX_DEPTH ?? 1);
 const AGENT_ID = process.env.OMPDSH_AGENT_ID ?? `session-${randomUUID()}`;
 const PARENT_ID = process.env.OMPDSH_PARENT_ID;
 const ROOT = process.env.OMPDSH_ROOT ?? fs.mkdtempSync("/tmp/ompdsh-");
@@ -107,7 +114,7 @@ function shapePayload(p: any): any {
 		.map(({ cache_control: _, ...b }: any) => b);
 	p.system = [...keep, { type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }];
 	// Raster: tools MCP (basic-memory) registradas pelo omp continuam visíveis na raiz
-	const mcp = DEPTH === 0 ? p.tools.filter((t: any) => typeof t?.name === "string" && stripPrefix(t.name).startsWith("mcp__")).map(({ cache_control: _, ...t }: any) => ({ ...t, name: stripPrefix(t.name) })) : [];
+	const mcp = DEPTH === 0 ? p.tools.filter((t: any) => typeof t?.name === "string" && mcpAllowed(stripPrefix(t.name))).map(({ cache_control: _, ...t }: any) => ({ ...t, name: stripPrefix(t.name) })) : [];
 	p.tools = [...activeTools(), ...mcp];
 	delete p.tool_choice;
 	p.thinking = { budget_tokens: 2048, display: "summarized", type: "enabled" };
@@ -290,6 +297,8 @@ function childPrompt(id: string, prompt: string) {
 
 function startChild(pi: ExtensionAPI, args: any, fork: boolean): string {
 	if (DEPTH >= MAX_DEPTH) throw new Error(`Delegation depth limit reached: current ${DEPTH}, maximum ${MAX_DEPTH}. Carry out the work directly.`);
+	const busy = [...children.values()].filter(c => c.status === "running").length;
+	if (busy >= MAX_PARALLEL) throw new Error(`Parallel subagent limit reached: ${busy} running, maximum ${MAX_PARALLEL}. Wait for one to finish or do the work directly.`);
 	const id = randomUUID();
 	const agent = typeof args.agent === "string" ? args.agent : undefined;
 	const c: Child = {
@@ -427,8 +436,12 @@ export default function ompDsh(pi: ExtensionAPI) {
 	const anyArgs = z.object({}).passthrough();
 
 	const impl: Record<string, (a: any, signal?: AbortSignal, ctx?: any) => Promise<any>> = {
-		async bash(a) {
+		async bash(a, _signal, ctx) {
 			const dir = a.workdir ? abs(a.workdir) : cwd;
+			if (ASK_DESTRUCTIVE && DESTRUCTIVE.test(String(a.command)) && ctx?.ui?.confirm) {
+				const ok = await ctx.ui.confirm("Run destructive command?", String(a.command), { timeout: ASK_TIMEOUT_MS });
+				if (!ok) return text("The user did not approve this destructive command (denied or timed out). Do not run it; find a non-destructive alternative or ask.");
+			}
 			const proc = spawn("bash", ["-c", rtkRewrite(a.command)], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
 			let out = "", err = "";
 			proc.stdout.on("data", d => (out += d));
@@ -631,14 +644,14 @@ export default function ompDsh(pi: ExtensionAPI) {
 			if (!qs.length) throw new Error("ask_user needs at least one question");
 			const ui = ctx?.ui;
 			if (ui?.askDialog) {
-				const r = await ui.askDialog(qs, {});
+				const r = await ui.askDialog(qs, { timeout: ASK_TIMEOUT_MS });
 				if (!r) return text("The user dismissed the question without answering.");
 				if (r.kind === "chat") return text("The user wants to discuss this instead of choosing; ask in plain text.");
 				return text(r.results.map((x: any) => `${x.question}\n→ ${[...x.selectedOptions, ...(x.customInput ? [x.customInput] : [])].join(", ") || "(no answer)"}`).join("\n\n"));
 			}
 			if (!ui?.select) throw new Error("No interactive user is attached; decide with the best default and say so.");
 			const out: string[] = [];
-			for (const q of qs) out.push(`${q.question}\n→ ${(await ui.select(q.question, q.options)) ?? "(no answer)"}`);
+			for (const q of qs) out.push(`${q.question}\n→ ${(await ui.select(q.question, q.options, { timeout: ASK_TIMEOUT_MS })) ?? "(no answer)"}`);
 			return text(out.join("\n\n"));
 		},
 	};
@@ -660,7 +673,7 @@ export default function ompDsh(pi: ExtensionAPI) {
 
 	// tools MCP chegam depois do session_start (descoberta assíncrona); ressincroniza a cada turno
 	const syncTools = async () => {
-		const mcp = DEPTH === 0 ? pi.getAllTools().map((t: any) => t.name).filter((n: string) => n.startsWith("mcp__")) : [];
+		const mcp = DEPTH === 0 ? pi.getAllTools().map((t: any) => t.name).filter(mcpAllowed) : [];
 		if (process.env.RASTER_DEBUG_TOOLS) console.error("raster tools", pi.getAllTools().length, mcp.join(","));
 		await pi.setActiveTools([...activeTools().map(t => t.name), ...mcp]);
 	};
