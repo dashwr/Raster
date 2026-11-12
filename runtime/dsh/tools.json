@@ -752,5 +752,47 @@
     }
    }
   }
+ },
+ {
+  "name": "compress",
+  "description": "Collapse one or more closed ranges of this conversation into detailed summaries to keep context lean. Every user-side message carries an id tag like [m0012]; earlier compressed ranges appear as [bN]. Each range runs from startId to endId inclusive (use only ids you can see, startId before endId, never the newest active messages). The summary replaces the range in every later request: make it exhaustive on what still matters (file paths, signatures, decisions, constraints, results, user wording for short user messages) and lean on everything else (drop failed attempts and verbose output). Include any [bN] block inside the range by mentioning it once. Several non-overlapping ranges may go in one call.",
+  "input_schema": {
+   "type": "object",
+   "required": [
+    "topic",
+    "content"
+   ],
+   "properties": {
+    "topic": {
+     "type": "string",
+     "description": "3-5 word label for the compressed block"
+    },
+    "content": {
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "object",
+      "required": [
+       "startId",
+       "endId",
+       "summary"
+      ],
+      "properties": {
+       "startId": {
+        "type": "string",
+        "description": "mNNNN or bN"
+       },
+       "endId": {
+        "type": "string",
+        "description": "mNNNN or bN"
+       },
+       "summary": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  }
  }
 ]

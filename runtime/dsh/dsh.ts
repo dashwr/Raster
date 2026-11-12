@@ -7,6 +7,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Dcp } from "./dcp";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const EXT = path.join(HERE, "dsh.ts");
@@ -16,6 +17,7 @@ const MODEL_ID = MODEL_SEL.split("/").pop() ?? "";
 const SYSTEM = [fs.readFileSync(path.join(HERE, "system.txt"), "utf8").replace("{{model}}", MODEL_ID),
 	...(process.env.RASTER_PROMPT_FILES ?? "").split(":").filter(Boolean).map(f => fs.readFileSync(f, "utf8").trim())].join("\n\n");
 const KEEPALIVE = process.env.RASTER_KEEPALIVE === "1";
+const VAULT_NUDGE = process.env.RASTER_VAULT_NUDGE === "1";
 const TOOLS: any[] = JSON.parse(fs.readFileSync(path.join(HERE, "tools.json"), "utf8"));
 const DEPTH = Number(process.env.OMPDSH_DEPTH ?? 0);
 const MAX_DEPTH = 1;
@@ -112,6 +114,8 @@ function shapePayload(p: any): any {
 		if (!Array.isArray(m.content)) continue;
 		for (const b of m.content) if (b.type === "tool_use" && typeof b.name === "string") b.name = stripPrefix(b.name);
 	}
+	// Raster: poda dinâmica (DCP) só na raiz; filhos são curtos
+	if (DEPTH === 0) p.messages = dcp().apply(p.messages, VAULT_NUDGE);
 	const first = p.messages[0];
 	if (first?.role === "user") {
 		if (typeof first.content === "string") first.content = first.content.replace(OMP_REMINDER, "");
@@ -139,6 +143,11 @@ function normalize(m: any): any {
 	const content = m.content.map(({ cache_control: _, ...b }: any) => b);
 	if (m.role === "user" && content.length === 1 && content[0].type === "text") return { role: m.role, content: content[0].text };
 	return { role: m.role, content };
+}
+
+let dcpState: Dcp | undefined;
+function dcp(): Dcp {
+	return (dcpState ??= new Dcp(path.join(ROOT, `dcp-${AGENT_ID}.json`)));
 }
 
 // Raster: subagente só vê as ferramentas básicas e as que a mãe liberou; raiz vê todas
@@ -604,6 +613,9 @@ export default function ompDsh(pi: ExtensionAPI) {
 		},
 		async workflow(a) {
 			return text(await runWorkflow(pi, a));
+		},
+		async compress(a) {
+			return text(dcp().compress(a));
 		},
 		// Raster: perguntas com alternativas, desenhadas como bloco interativo no app
 		async ask_user(a, _signal, ctx) {
